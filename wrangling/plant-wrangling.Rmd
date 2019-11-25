@@ -1,0 +1,246 @@
+---
+title: "Plant growth data wrangling"
+author: "Eric R. Scott"
+date: "2019-11-5"
+output: 
+  html_notebook: 
+    highlight: kate
+    theme: yeti
+    toc: yes
+    toc_float: yes
+    number_sections: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+*Last compiled: `r Sys.Date()`*
+
+```{r packages, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(here)
+library(lubridate)
+library(conflicted)
+conflict_prefer("filter", "dplyr")
+conflict_prefer("lag", "dplyr")
+conflict_prefer("here", "here")
+```
+
+#Purpose
+
+gathering of shoots by plant and date, and reading in of stem diameter data done in the shoot growth script. One challenge is that every inter-harvest period the shoots are re-set.  That limits me from using all the data easily.  The way I'm thinking of dealing with this is to separate the data into fields and harvest periods, calculate relative growth rates, match them to daily temperatures, and then re-combine the data for modeling.
+
+```{r select shoot data}
+input <- data %>% 
+  dplyr::select(Date, Field, Harvesting, Plant, S1, S2, S3, S4, S5, S6, S7)
+```
+
+### Read in data and split by field
+Load data, separate fields A and B
+```{r, message=TRUE, warning=TRUE}
+input.A <- input %>% filter(Field == "A")
+input.B <- input %>% filter(Field == "B")
+```
+
+### Split by inter-harvest period
+
+#### Extract harvest dates and create inter-harvest intervals
+Find harvest dates for both fields
+```{r find harvest dates}
+#Find the harvest dates, i.e. the first date of each inter-harvest period.
+
+harvest.dates.A <- input.A %>% 
+  group_by(Date) %>% 
+  summarise(Harvest = last(Harvesting)) %>% 
+  filter(Harvest == "Y") %>% 
+  ungroup() %>% 
+  dplyr::select(Date)
+
+harvest.dates.B <- input.B %>% 
+  group_by(Date) %>% 
+  summarise(Harvest = last(Harvesting)) %>% 
+  filter(Harvest == "Y") %>% 
+  ungroup() %>% 
+  dplyr::select(Date)
+
+harvest.dates.B <- add_row(harvest.dates.B, Date = max(input.B$Date) + days(1))
+#on the last day of data collection field B was harvested
+```
+
+Create harvest intervals.  Intervals are a data format from the `lubridate` package.  Because of the way I've coded harvesting, the last date of each inter-harvest interval is the harvest date - 1 day.
+```{r create harvest intervals}
+harvest.int.A <- (lag(harvest.dates.A$Date) - days(1)) %--% (harvest.dates.A$Date - days(1))
+harvest.int.A <- harvest.int.A[-1]
+
+harvest.int.B <- (lag(harvest.dates.B$Date) - days(1)) %--% (harvest.dates.B$Date - days(1))
+
+#the very first day of data collection was not immediately after a harvest.  Add that interval manually.
+
+harvest.int.B[1] <- min(input.B$Date) %--% (harvest.dates.B$Date[1] - days(1))
+```
+
+Ok, now I create a column showing which interharvest period each datapoint belongs to labeled by harvest date and another column labeled by harvest number (1-4)
+```{r assign intervals}
+data.A <- input.A %>%
+  mutate(interharvest = case_when(Date %within% harvest.int.A[1] ~ int_end(harvest.int.A[1]),
+                                  Date %within% harvest.int.A[2] ~ int_end(harvest.int.A[2]),
+                                  Date %within% harvest.int.A[3] ~ int_end(harvest.int.A[3]),
+                                  Date %within% harvest.int.A[4] ~ int_end(harvest.int.A[4]),
+                                  TRUE                           ~ as.POSIXct(NA)),
+         interharvest.no = case_when(Date %within% harvest.int.A[1] ~ 1,
+                                     Date %within% harvest.int.A[2] ~ 2,
+                                     Date %within% harvest.int.A[3] ~ 3,
+                                     Date %within% harvest.int.A[4] ~ 4,
+                                     TRUE                           ~ as.numeric(NA)) %>% as.factor())
+
+# Field A data collection ended before field B.  Now that these data frames are split, data.A has a bunch of NAs.  I'll get rid of them, although I'll need to remember this when re-joining the data.
+
+data.A <- data.A %>% filter(Date < ymd("2017-07-22"))
+
+data.B <- input.B %>%
+  mutate(interharvest = case_when(Date %within% harvest.int.B[1] ~ int_end(harvest.int.B[1]),
+                                  Date %within% harvest.int.B[2] ~ int_end(harvest.int.B[2]),
+                                  Date %within% harvest.int.B[3] ~ int_end(harvest.int.B[3]),
+                                  Date %within% harvest.int.B[4] ~ int_end(harvest.int.B[4]),
+                                  TRUE                           ~ as.POSIXct(NA)),
+         interharvest.no = case_when(Date %within% harvest.int.B[1] ~ 1,
+                                     Date %within% harvest.int.B[2] ~ 2,
+                                     Date %within% harvest.int.B[3] ~ 3,
+                                     Date %within% harvest.int.B[4] ~ 4,
+                                     TRUE                           ~ as.numeric(NA)) %>% as.factor())
+```
+
+Now I group by interhavest period and calculate a growth rate for each shoot on each day by taking $Length_{t-1} / Length_t$ *Should this be RGR??*
+```{r calculate r, message=FALSE, warning=FALSE}
+data.B.full <- 
+  data.B %>% 
+  group_by(interharvest, Plant) %>%
+    mutate_at(vars(num_range("S", 1:7)),   #on only the shoot columns
+              funs(growth = lag(., 1) / .)) %>%  #apply the fun lag(length) / length
+    gather(key = Key,              #gather shoot length and growthrate into one column
+           value = Value,
+           -Date, -Field, -Harvesting, -Plant, -interharvest, -interharvest.no) %>% 
+    mutate(Type = ifelse(grepl(".*\\_", Key),
+                         "Shoot.Growth",
+                         "Shoot.Length")) %>% #create a column that indicates whether a value is a growth rate or a length
+    separate(Key, c("Shoot", "Trash"), sep = "_") %>% #get rid of the "growth" indicator in the "key" column
+    dplyr::select(-Trash) %>% 
+    spread(key = Type, value = Value) #spread values into separate columns for growth and length
+
+data.B.full
+
+data.A.full <- 
+  data.A %>%
+  group_by(interharvest, Plant) %>%
+    mutate_at(vars(num_range("S", 1:7)),   #on only the shoot columns
+              funs(growth = lag(., 1) / .)) %>%  #apply the fun lag(length) / length
+    gather(key = Key,              #gather shoot length and growthrate into one column
+           value = Value,
+           -Date, -Field, -Harvesting, -Plant, -interharvest, -interharvest.no) %>% 
+    mutate(Type = ifelse(grepl(".*\\_", Key),
+                         "Shoot.Growth",
+                         "Shoot.Length")) %>% #create a column that indicates whether a value is a growth rate or a length
+    separate(Key, c("Shoot", "Trash"), sep = "_") %>% #get rid of the "growth" indicator in the "key" column
+    dplyr::select(-Trash) %>% 
+    spread(key = Type, value = Value) %>%  #spread values into separate columns for growth and length
+    filter(!is.na(interharvest))
+
+data.A.full
+```
+
+### Join with temperature data
+read in temperature data and join with field A and B data.  Because shoot measurements are taken early in the morning, its the temperature of the previous day that is most relevant.  I create an "effective date" to allow easy merging of the two data sources.
+
+```{r, message=FALSE, warning=FALSE}
+daily.temps <- read_rds("daily temps.rds")
+daily.temps
+#because measurements are early in the morning, the weather the previous day is most relevant.  Create an "effective date" and merge by that
+daily.temps$effective.date <- daily.temps$Date + days(1)
+
+data.B.wtemp <- inner_join(data.B.full, daily.temps, by = c("Date" = "effective.date")) %>%
+  dplyr::select(-Date.y)
+#tail(data.B.wtemp)
+
+data.A.wtemp <- inner_join(data.A.full, daily.temps, by = c("Date" = "effective.date")) %>%
+  dplyr::select(-Date.y)
+```
+Merge back into one data frame
+```{r}
+shoot.data <- bind_rows(data.A.wtemp, data.B.wtemp)
+shoot.data
+```
+
+
+
+### Join with stem diameter data
+maybe this should have happened long ago? move this to data tidying too probably
+
+#### Read in and tidy stem diameter data
+Read in stem diameter data and combine excel sheets into one data frame. Tidy.
+```{r}
+path <- "stem diameters.xlsx"
+dia.list <- lapply(excel_sheets(path), read_xlsx, path = path, na = "NA")
+names(dia.list) <- excel_sheets(path)
+
+dia.data <- bind_rows(dia.list, .id = "filename") %>% 
+  separate(filename, into = c("Field", "trash", "Month", "Day"), " ") %>% 
+  mutate(Date = ymd(paste(2017, Month, Day))) %>% 
+  select(-trash, -Month, -Day) %>% 
+  select(Date, everything()) %>% 
+  gather(-Date, -Field, -Plant, key = Shoot, value = stem.dia)
+
+dia.data
+```
+Now the trick is joining it to the rest of the data correctly. Since the date the stem diameter was measured on isn't the first day of measurements always, I should do the same interharvest thing I did before and join by that column.  FIRST, I have to split by field in order to do that.
+
+```{r}
+dia.data.A <- dia.data %>% 
+  filter(Field == "A") %>%
+  mutate(interharvest = case_when(Date %within% harvest.int.A[1] ~ int_end(harvest.int.A[1]),
+                                  Date %within% harvest.int.A[2] ~ int_end(harvest.int.A[2]),
+                                  Date %within% harvest.int.A[3] ~ int_end(harvest.int.A[3]),
+                                  Date %within% harvest.int.A[4] ~ int_end(harvest.int.A[4]),
+                                  TRUE                           ~ as.POSIXct(NA)))
+
+dia.data.B <- dia.data %>%
+  filter(Field == "B") %>% 
+  mutate(interharvest = case_when(Date %within% harvest.int.B[1] ~ int_end(harvest.int.B[1]),
+                                  Date %within% harvest.int.B[2] ~ int_end(harvest.int.B[2]),
+                                  Date %within% harvest.int.B[3] ~ int_end(harvest.int.B[3]),
+                                  Date %within% harvest.int.B[4] ~ int_end(harvest.int.B[4]),
+                                  TRUE                           ~ as.POSIXct(NA)))
+#merge it back together and overwrite
+dia.data <- bind_rows(dia.data.A, dia.data.B)
+#so actually the date I measured stem diameter doesn't matter
+dia.data <- dia.data %>% select(-Date)
+dia.data
+```
+
+Now I can join it with the shoot data
+```{r}
+shoot.data <- left_join(shoot.data, dia.data)
+```
+
+### Join with CAAS weather data
+
+```{r}
+CAASweather.tidy
+```
+For now, I just want `rainfall.CAAS_0.1mm`, `sun.hrs`, and `rh`
+
+```{r}
+shoot.data <- CAASweather.tidy %>% 
+  select(Date, rainfall.CAAS_0.1mm, sun.hrs, rh) %>% 
+  right_join(shoot.data)
+shoot.data
+```
+
+### Export shoot growth data
+```{r}
+write_rds(shoot.data, "shoot data.rds")
+harvest.intervals <- list(harvest.int.A, harvest.int.B)
+names(harvest.intervals) <- c("A", "B")
+harvest.intervals
+write_rds(harvest.intervals, "harvest intervals.rds")
+```
