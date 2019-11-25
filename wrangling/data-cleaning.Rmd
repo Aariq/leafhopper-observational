@@ -65,6 +65,7 @@ field_data <-
   ) %>%
   select(
     date_time,
+    date,
     day,
     field,
     "harvest" = harvesting,
@@ -116,14 +117,14 @@ I think this is going to be best since I'll mostly be analyzing these separately
 ```{r}
 hoppers <-
   field_data %>% 
-  select(-plant, num_range("s", 1:7))
+  select(-plant, -num_range("s", 1:7))
 hoppers
 ```
 
 Write to rds
 
 ```{r}
-write_rds(field_data, here("data", "cleaned", "hoppers.rds"))
+write_rds(hoppers, here("data", "cleaned", "hoppers.rds"))
 ```
 
 ### Plant
