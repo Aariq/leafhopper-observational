@@ -1,0 +1,253 @@
+---
+title: "Wrangling daily leafhopper count and shoot growth data"
+author: "Eric R. Scott"
+date: "2017-06-05"
+output: 
+  html_notebook: 
+    highlight: kate
+    theme: yeti
+    toc: yes
+    toc_float: yes
+    number_sections: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+*Last compiled: `r Sys.Date()`*
+
+```{r packages, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(here)
+# library(stringr)
+library(readxl)
+library(lubridate)
+library(conflicted)
+library(janitor)
+conflict_prefer("filter", "dplyr")
+conflict_prefer("lag", "dplyr")
+conflict_prefer("here", "here")
+```
+
+# Purpose
+
+The goal of this script is simply to read in the excel file used for entering data and tidy it and maybe do some simple calculations (like leafhoppers per 30 leaves -> leafhoppers per leaf).  I think for now, its best to split the hopper data and shoot growth data into two files.  Later, they can be merged with date and plant# as keys.
+
+Also gonna use this to tidy up the temperature data, rainfall data (if needed) and merge stem diameter data with the shoot growth data
+
+**Things to do:**
+ - Import and add your precip data from the rain guage
+ - Import precip data from Li Xin
+ 
+# Leafhopper and plant data from field
+
+The original data is on [google drive](https://goo.gl/k2etst).  The first sheet is a template/key.
+This reads in an excel workbook containing just the data.
+
+## Leafhopper and stem height data
+
+```{r}
+path <- here("data", "Leafhopper Population and Shoot Growth Data.xlsx")
+data.list <- lapply(excel_sheets(path), read_xlsx, path = path, na = "NA")
+data.raw <- bind_rows(data.list)
+
+field_data <-
+  data.raw %>%
+  clean_names() %>%
+  mutate(day = as.numeric(difftime(date, min(date), units = "days") + 1)) %>% 
+  mutate(
+    date = as_date(date),
+    time_start = format(start_time, "%H:%M"),
+    date_time = ymd_hm(paste(date, time_start), tz = "UTC"),
+    plant = as.factor(plant),
+    field = as.factor(field)
+  ) %>%
+  select(
+    date_time,
+    day,
+    field,
+    "harvest" = harvesting,
+    # weeding, #drop this since they only weeded once
+    hoppers,
+    "n_leaves" = number_of_leaves,
+    counter,
+    plant,
+    num_range("s", 1:7)
+  )
+
+field_data
+```
+
+## Stem diameter data
+
+```{r}
+path <- here("data", "stem-diameters.xlsx")
+dia.list <- lapply(excel_sheets(path), read_xlsx, path = path, na = "NA")
+names(dia.list) <- excel_sheets(path)
+
+dia.data <-
+  bind_rows(dia.list, .id = "filename") %>%
+  clean_names() %>%
+  separate(filename, into = c("field", "trash", "month", "day"), " ") %>%
+  mutate(
+    date = ymd(paste(2017, month, day)),
+    plant = as.factor(plant),
+    field = as.factor(field)
+  ) %>%
+  select(-trash, -month, -day) %>%
+  select(date, everything()) %>%
+  pivot_longer(
+    num_range("s", 1:7),
+    names_to = "shoot",
+    names_prefix = "s",
+    names_ptypes = list("shoot" = factor()),
+    values_to = "diameter"
+  )
+
+dia.data
+```
+
+## Split into plant and leafhopper data
+I think this is going to be best since I'll mostly be analyzing these separately.  Plus the plant data is wide and needs to be gathered and joined with stem diameters
+
+### Hoppers
+
+```{r}
+hoppers <-
+  field_data %>% 
+  select(-plant, num_range("s", 1:7))
+hoppers
+```
+
+Write to rds
+
+```{r}
+write_rds(field_data, here("data", "cleaned", "hoppers.rds"))
+```
+
+### Plant
+```{r}
+shoot_growth <-
+  field_data %>%
+  mutate(date = as_date(date_time)) %>% 
+  select(-hoppers, -n_leaves, -counter, -date_time) %>%
+  pivot_longer(
+    num_range("s", 1:7),
+    names_to = "shoot",
+    names_prefix = "s",
+    names_ptypes = list("shoot" = factor()),
+    values_to = "diameter"
+  )
+shoot_growth
+```
+```{r}
+write_rds(shoot_growth, here("data", "cleaned", "shoot-growth.rds"))
+write_rds(dia.data, here("data", "cleaned", "shoot-diameter.rds"))
+```
+
+
+# HOBO temperature data
+
+load in HOBO data
+
+```{r temperature}
+temp.input <-
+  read_csv(
+    here("data", "Temperature", "Eric's_Temp_Logger_2.csv"),
+    skip = 2,
+    col_names = c(
+      "num",
+      "date_time",
+      "temp_c",
+      "coupler_det",
+      "coupler_att",
+      "connected",
+      "end"
+    )
+  )
+temp.input
+```
+
+
+removes rows before and after an "event" (e.g. connecting to computer.  These show up as NA's in the temp column)
+
+```{r}
+remove_these_rows <-
+  sort(unique(c(temp.input$num[is.na(temp.input$temp_c)],
+                temp.input$num[is.na(temp.input$temp_c)] + 1,
+                temp.input$num[is.na(temp.input$temp_c)] - 1,
+                max(temp.input$num),
+                min(temp.input$num))))
+
+temp.data <- 
+  temp.input[-remove_these_rows, ] %>%
+  dplyr::select(date_time, temp_c)
+```
+
+Format date_time column
+
+```{r format date_time}
+temp.data <-
+  temp.data %>%
+  mutate(date_time = mdy_hms(date_time),
+         date = as_date(date_time))
+```
+
+create a summary of daily min, max, and mean temps
+
+```{r dailiy summary}
+daily.temps <- 
+  temp.data %>% 
+  dplyr::select(-date_time) %>% 
+  group_by(date) %>% 
+  summarise(temp_mean = mean(temp_c),
+            temp_max = max(temp_c),
+            temp_min = min(temp_c))
+```
+
+Save temperature data .rds files
+
+```{r save temp data}
+write_rds(temp.data, here("data", "cleaned", "hourly-temps-hobo.rds"))
+write_rds(daily.temps, here("data", "cleaned", "daily-temps-hobo.rds"))
+```
+
+# Weather data from Dr. Han
+Dr. Han sent me weather data by day (not hour) rounded to the nearest 0.5
+
+## Import weather data
+```{r}
+CAASweather <-
+  read_xlsx(
+    here("data", "Shaxian climate data in 2016-2017.xlsx"),
+    skip = 1,
+    col_types = c("date",
+                  rep("numeric", 6))
+  ) %>%
+  slice(1:(n() - 2)) %>% 
+  clean_names()
+```
+
+## Tidy weather data
+fix date column, rename columns
+```{r}
+CAASweather.tidy <-
+  CAASweather %>%
+  rename(
+    temp_mean_caas = mean_temperature_o_c,
+    temp_max_caas = highest_tem,
+    temp_min_caas = lowest_tem,
+    precip_caas_0.1mm = rainfall_0_1_mm,
+    sun_hrs = shinetime_h,
+    rh = relative_humidity_percent
+  )
+```
+
+export
+
+```{r}
+write_rds(CAASweather.tidy, here("data", "cleaned", "weather-caas.rds"))
+```
+
+
