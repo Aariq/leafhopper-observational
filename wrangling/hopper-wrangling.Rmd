@@ -38,10 +38,7 @@ hoppers <- read_rds(here("data", "cleaned", "hoppers.rds"))
 daily.temps <- read_rds(here("data", "cleaned", "daily-temps-hobo.rds"))
 hourly.temps <- read_rds(here("data", "cleaned", "hourly-temps-hobo.rds"))
 caas <- read_rds(here("data", "cleaned", "weather-caas.rds"))
-rain_gauge <-
-  read_csv(here("data", "rainfall.csv")) %>% 
-  mutate(date = paste(Date, "/2017") %>% mdy()) %>% 
-  select(date, precip_mm = "height (mm)")
+rain_gauge <- read_rds(here("data", "cleaned", "rain-gauge.rds"))
 ```
 
 

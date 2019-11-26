@@ -138,7 +138,7 @@ shoot_growth <-
     names_to = "shoot",
     names_prefix = "s",
     names_ptypes = list("shoot" = factor()),
-    values_to = "diameter"
+    values_to = "shoot_height"
   )
 shoot_growth
 ```
@@ -242,7 +242,8 @@ CAASweather.tidy <-
     precip_caas_0.1mm = rainfall_0_1_mm,
     sun_hrs = shinetime_h,
     rh = relative_humidity_percent
-  )
+  ) %>% 
+  mutate(date = as_date(date))
 ```
 
 export
@@ -251,4 +252,16 @@ export
 write_rds(CAASweather.tidy, here("data", "cleaned", "weather-caas.rds"))
 ```
 
+# Rain gauge data
+
+```{r}
+rain_gauge <-
+  read_csv(here("data", "rainfall.csv")) %>% 
+  mutate(date = paste(Date, "/2017") %>% mdy()) %>% 
+  select(date, precip_mm = "height (mm)")
+```
+
+```{r}
+write_rds(rain_gauge, here("data", "cleaned", "rain-gauge.rds"))
+```
 
