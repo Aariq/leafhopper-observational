@@ -56,7 +56,8 @@ Find harvest dates for both fields
 ```{r find harvest dates}
 #Find the harvest dates, i.e. the first date of each inter-harvest period.
 
-harvest.dates.A <- input.A %>% 
+harvest.dates.A <-
+  input.A %>% 
   group_by(date) %>% 
   summarise(Harvest = last(harvest)) %>% 
   filter(Harvest == "Y") %>% 
@@ -116,7 +117,9 @@ data.B <- input.B %>%
                                      date %within% harvest.int.B[3] ~ 3,
                                      date %within% harvest.int.B[4] ~ 4,
                                      TRUE                           ~ as.numeric(NA)) %>% as.factor())
+
 ```
+
 
 Now I group by interhavest period and calculate a growth rate for each shoot on each day.
 
@@ -124,20 +127,27 @@ Absolute growth rate:
 $$
 AGR = \frac{S_2 - S_1}{t_2 - t_1}
 $$
+Also calulate growth like this:
+
+$$
+r = S_2/S_1
+$$
 ```{r}
 data.B.full <- 
   data.B %>% 
-  mutate(shoot = paste0("f", field, "-h", interharvest.no, "-p", plant, "-s", shoot)) %>% 
-  group_by(interharvest, shoot) %>% 
+  mutate(shoot_id = paste0("f", field, "-h", interharvest.no, "-p", plant, "-s", shoot)) %>% 
+  group_by(interharvest, shoot_id) %>% 
   arrange(date) %>% 
-  mutate(growth = shoot_height - lag(shoot_height))
+  mutate(growth = shoot_height - lag(shoot_height),
+         r = shoot_height/lag(shoot_height))
 
 data.A.full <- 
   data.A %>% 
-  mutate(shoot = paste0("f", field, "-h", interharvest.no, "-p", plant, "-s", shoot)) %>% 
-  group_by(interharvest, shoot) %>% 
+  mutate(shoot_id = paste0("f", field, "-h", interharvest.no, "-p", plant, "-s", shoot)) %>% 
+  group_by(interharvest, shoot_id) %>% 
   arrange(date) %>% 
-  mutate(growth = shoot_height - lag(shoot_height))
+  mutate(growth = shoot_height - lag(shoot_height),
+         r = shoot_height/lag(shoot_height))
 ```
 
 
@@ -180,7 +190,10 @@ dia.data.A <-
                                      date %within% harvest.int.A[3] ~ 3,
                                      date %within% harvest.int.A[4] ~ 4,
                                      TRUE                           ~ as.numeric(NA)) %>% as.character())
+```
 
+
+```{r}
 dia.data.B <- 
   diameter %>%
   filter(field == "B") %>% 
@@ -194,21 +207,23 @@ dia.data.B <-
                                      date %within% harvest.int.B[3] ~ 3,
                                      date %within% harvest.int.B[4] ~ 4,
                                      TRUE                           ~ as.numeric(NA)) %>% as.character())
+
+```
+
+
+```{r}
 #merge it back together and overwrite
 dia.data <- bind_rows(dia.data.A, dia.data.B)
 #so actually the date I measured stem diameter doesn't matter
 dia.data2 <-
   dia.data %>% 
-  mutate(shoot = paste0("f", field, "-h", interharvest.no, "-p", plant, "-s", shoot)) %>% 
-  select(-date)
-dia.data2 %>% arrange(interharvest)
+  mutate(shoot_id = paste0("f", field, "-h", interharvest.no, "-p", plant, "-s", shoot)) %>% 
+  select(shoot_id, diameter)
 ```
 
 Now I can join it with the shoot data
 ```{r}
-shoot.data <- 
-  bind_rows(left_join(data.A.full, dia.data.A),
-            left_join(data.B.full, dia.data.B))
+shoot.data <- bind_rows(data.A.full, data.B.full) %>% left_join(dia.data2)
 ```
 
 # Add weather data
@@ -218,6 +233,7 @@ shoot_data_full <-
   left_join(shoot.data, hobo, by = "date") %>% 
   left_join(caas_sub, by = "date") %>% 
   left_join(rain_gauge, by = "date")
+shoot_data_full
 ```
 
 

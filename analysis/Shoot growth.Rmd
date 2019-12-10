@@ -1,0 +1,412 @@
+---
+title: "Preliminary analysis of shoot growth data"
+author: "Eric R. Scott"
+date: "2017-06-05"
+output: 
+  html_notebook: 
+    highlight: kate
+    theme: yeti
+    toc: yes
+    toc_float: yes
+    number_sections: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+*Last compiled: `r Sys.Date()`*
+
+```{r packages, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(lubridate)
+library(lme4)
+library(car)
+library(broom)
+library(plotly)
+library(here)
+library(conflicted)
+conflict_prefer("filter", "dplyr")
+conflict_prefer("here", "here")
+conflict_prefer("lag", "dplyr")
+```
+
+# Purpose
+Exploratory data analysis
+
+## Experimental Design
+Two fields (A and B).  10 plants in each field, 7 shoots on each plant.  Daily measurements of growth.  Shoots reset every harvest and stem diameter measured as co-variate.  Three inter-harvest periods for each site (but overlapping).  Hourly temperature measurements (converted to daily max, min, mean).
+
+## Goal of analysis
+Is there an effect of temperature on shoot growth?  Is the effect linear or quadratic (that is, does growth slow when it's too hot)?  Does shoot growth differ between the two fields.  I also have data on precipitation and "sunshine hours" which could impact shoot growth, but I'm going to start by modeling the effects of temperature.
+
+```{r}
+shoot.data <- read_rds(here("data", "cleaned", "shoots.rds"))
+shoot.data
+# harvest.intervals <- read_rds("harvest intervals.rds")
+# harvest.intervals
+```
+`shoot.data` contains
+
+ - `date`, the date of the observation
+ - `day`, day from first measurement 
+ - `field`, whether it's from field A or B
+ - `harvest`, did they hareves yesterday?
+ - `plant`, plant ID within field.  It's the same plant ever interharvest period
+ - `shoot`, shoot ID within plant.  These are different shoots each interhavest period
+ - `shoot_id`, unique shoot ID in the form of f{field}-h{interhaverst.no}-p{plant}-s{shoot#}
+ - `shoot_height` shoot height in cm
+ - `interharvest` Which interharvest period?  Date listed is the last day of that interharvest period
+ - `interharvest.no` Which interharvest period? 1-4 as character, for easier filtering and faceting in plots
+ - `growth` difference from the previous day's `shoot_height`
+ - `diameter` shoot diameter in (UNITS??)
+ - `temp_mean`, mean daily temperature in ºC
+ - `temp_max`, maximum daily temperature in ºC
+ - `temp_min`, minimum daily temperature in ºC
+ - `precip_caas`, precip from weather station in mm
+ - `sun_hrs`, from weather station
+ - `rh`, relative humidity from weather station
+ - `precip_mm`, precip from rain gauge
+
+
+# New notes from 2019/2020
+
+### TODO: Fix obvious data entry errors!!!
+
+I'm not sure why I was previously so obsessed with manually correcting datapoints.  Some are super obviously wrong (off by >5 cm), but the ones that are off by 1cm, maybe I shouldn't worry about.
+
+**TODO:** when I get back to my office, check some of the really eggregious measurment errors with the field notebook one more time.  Maybe set those to NAs for now.
+
+I also don't know why I was obsessed with removing "dormant" buds.  Seems like it makes sense, but I don't know if I *need* to do this, at least right now.
+
+## How to model plant growth?
+Looking at plantsim.Rmd the final model is:
+```
+plant.lmer2 = lmer(r ~ temp + I(temp^2) + stem.dia + (1|plant), data = growth.rates.data)
+```
+Where `r = height/lag(height)` and `temp` is probably best modeled as the previous day's temp (since height was measured in the morning)
+
+Now, this model is for one field and one interharvest period. Ideally, I would like to use all the data available.  This might be fine:
+
+```
+lmer(r ~ temp*field + I(temp^2)*field + stem.dia + (1|plant_id))
+```
+I should take care that `plant_id` is coded correctly.  Probably `glue("{field}{plant}")` is correct.
+
+
+```{r}
+shoot.data2 <- 
+  shoot.data %>% 
+  mutate(plant_id = paste0(field, plant)) %>% 
+  group_by(field, interharvest.no) %>% 
+  mutate(day_post = day - first(day),
+         temp_mean_lag = lag(temp_mean),
+         precip_lag = lag(precip_mm)) %>% 
+  ungroup()
+
+shoot.data2 %>% filter(day_post == 0)
+```
+
+```{r}
+temp.lmer <- lmer(r ~ temp_mean_lag*field + I(temp_mean_lag^2)*field + day_post + diameter + (field|plant_id),
+                   data = shoot.data2)
+#no random effect of plant
+temp.lm <- lm(r ~ temp_mean_lag*field + I(temp_mean_lag^2)*field + day_post + diameter,
+              data = shoot.data2)
+#linear instead of quadratic
+temp.lm1 <- lm(r ~ temp_mean_lag*field + day_post + diameter,
+               data = shoot.data2)
+#no interaction with field
+temp.lm2 <- lm(r ~ temp_mean_lag + I(temp_mean_lag^2) + field + day_post + diameter,
+               data = shoot.data2)
+#linear and no interaction
+temp.lm3 <- lm(r ~ temp_mean_lag + field + day_post + diameter,
+               data = shoot.data2)
+#quadratic but no effect of field at all
+temp.lm4 <- lm(r ~ temp_mean_lag + I(temp_mean_lag^2) + day_post + diameter,
+               data = shoot.data2)
+bbmle::ICtab(temp.lmer, temp.lm1, temp.lm2, temp.lm, temp.lm3, temp.lm4)
+summary(temp.lm4)
+Anova(temp.lm4)
+```
+growth rate slows over time after harvest
+fatter stems grow faster
+temperature effects growth in a quadratic manner
+```{r}
+augment(temp.lm4) %>% 
+  ggplot(aes(x = lag.temp_mean., y = .fitted, size = diameter, color = day_post)) +
+  geom_point()
+```
+
+```{r}
+precip.lmer <-
+  lmer(r ~ precip_lag*field + I(precip_lag^2)*field + day_post + diameter + (field|plant_id),
+                   data = shoot.data2)
+#no random effect of plant
+precip.lm <- lm(r ~ precip_lag*field + I(precip_lag^2)*field + day_post + diameter,
+              data = shoot.data2)
+#linear instead of quadratic
+precip.lm1 <- lm(r ~ precip_lag*field + day_post + diameter,
+               data = shoot.data2)
+#no interaction with field
+precip.lm2 <- lm(r ~ precip_lag + I(precip_lag^2) + field + day_post + diameter,
+               data = shoot.data2)
+#linear and no interaction
+precip.lm3 <- lm(r ~ precip_lag + field + day_post + diameter,
+               data = shoot.data2)
+#quadratic but no effect of field at all
+precip.lm4 <- lm(r ~ precip_lag + I(precip_lag^2) + day_post + diameter,
+               data = shoot.data2)
+bbmle::ICtab(precip.lmer, precip.lm1, precip.lm2, precip.lm, precip.lm3, precip.lm4)
+summary(precip.lm2)
+Anova(precip.lm2)
+```
+fatter stems grow faster
+growth slows as time passes after harvest
+precipitation has a quadratic effect on growth
+fields grow differently
+
+
+# Multivariate approach
+```{r}
+library(ropls)
+shoot.data3 <- shoot.data2 %>% filter(!is.na(r)) %>% 
+  mutate(temp_mean_lag2  = temp_mean_lag^2,
+         precip_lag2 = precip_lag^2)
+
+
+test <-  
+  opls(shoot.data3 %>% select(diameter, temp_mean_lag, temp_mean_lag2, precip_lag, precip_lag2, day_post),
+     shoot.data3$r)
+
+getVipVn(test)
+```
+
+
+
+
+# OLD:
+
+**To Do:**
+
+ - Make sure all weather variables are lagged appropriately.
+ - Change how shoot growth is calculated from r to RGR
+ - Fix axis labels of EDA plots
+ - Viusally inspect all shoot growth and look for data entry errors. Use `plotly` to assist in IDing specific date/shoot/plant/field to be adjusted. Fix if justified in doing so in R code.
+ - Decide how to deal with "dormant" shoots that never grow.  Colin suggest only using the top 5 fastest growing shoots.
+ - More exploratory data anlysis with precipitation, sunlight hours, and relative humidity.
+ - Read in and wrangle hourly precip data (from photos of data sheets Li Xin sent and John entered.)
+ - Model changes in Shoot.Growth with temp and rainfall using plant and shoot as random effects and stem diameter as fixed effect (or random?)
+
+
+
+
+# Exploratory Data Analysis
+
+## Plot growth
+
+Try plotting shoot length over time color = shoot ID, faceted by plant
+
+```{r}
+shoot_grouped <- 
+  shoot.data %>% 
+  group_by(field, interharvest.no) 
+df <- group_keys(shoot_grouped)
+names <- glue::glue("Field {df$field}, Harvest {df$interharvest.no}")
+
+shoot_growth_list <- group_split(shoot_grouped) %>% set_names(names)
+names(shoot_growth_list)
+
+plotlist <-
+  map2(.x = shoot_growth_list, .y = names(shoot_growth_list), ~{
+  ggplot(.x, aes(x = date, y = shoot_height)) +
+    geom_line(aes(color = shoot)) +
+    facet_wrap(~plant) +
+    labs(title = .y) +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+})
+
+map(plotlist, ggplotly)
+```
+
+
+I don't remember for sure if I checked to see if these were data **entry** errors, or measurement errors.  If measurement errors, might not be the best idea to adjust them, (except maybe the onen that are off by > 5 cm).
+
+```{r}
+problem.data <-
+  tribble(~field, ~interharvest.no, ~plant, ~shoot, ~date, ~adjustment,
+          "A",    1,                1,      6,             mdy("6/09/17"), 1,
+          "A",    1,                1,      6,             mdy("6/22/17"), 1,
+          "A",    1,                1,      6,             mdy("6/23/17"), 1,
+          "A",    1,                1,      7,             mdy("6/12/17"), -1,
+          "A",    1,                3,      7,             mdy("6/07/17"), -1,
+          "A",    1,                3,      4,             mdy("6/07/17"), -1,
+          "A",    1,                3,      5,             mdy("6/11/17"), 1,
+          "A",    1,                3,      5,             mdy("6/14/17"), 1,
+          "A",    1,                5,      2,             mdy("6/11/17"), -1,
+          "A",    1,                6,      4,             mdy("6/07/17"), -1,
+          "A",    1,                6,      7,             mdy("6/08/17"), -1,
+          "A",    1,                8,      7,             mdy("6/10/17"), 1,
+          "A",    1,                8,      7,             mdy("6/14/17"), 1,
+          "A",    1,                8,      3,             mdy("6/14/17"), -1,
+          "A",    1,                8,      3,             mdy("6/17/17"), -1,
+          "A",    1,                9,      3,             mdy("6/19/17"), 1,
+          "A",    2,                2,      1,             mdy("7/01/17"), -2,
+          "A",    2,                3,      6,             mdy("7/02/17"), 1,
+          "A",    2,                8,      6,             mdy("7/07/17"), -3,
+          "A",    3,                1,      3,             mdy("7/15/17"), -1,
+          "A",    3,                2,      3,             mdy("7/14/17"), -1,
+          "B",    1,                5,      4,             mdy("6/07/17"), -1,
+          "B",    1,                6,      2,             mdy("6/07/17"), 2,
+          "B",    2,                1,      5,             mdy("6/16/17"), 1,
+          "B",    2,                1,      5,             mdy("7/08/17"), 1,
+          "B",    2,                1,      2,             mdy("6/24/17"), -3,
+          "B",    2,                1,      3,             mdy("7/06/17"), 3,
+          "B",    2,                1,      3,             mdy("7/07/17"), 3,
+          "B",    2,                2,      1,             mdy("6/25/17"), -2,
+          "B",    2,                4,      1,             mdy("6/20/17"), -2,
+          "B",    2,                4,      1,             mdy("7/01/17"), -3,
+          "B",    2,                4,      1,             mdy("7/02/17"), -3,
+          "B",    2,                4,      1,             mdy("7/05/17"), -4,
+          "B",    2,                4,      1,             mdy("7/06/17"), -4,
+          "B",    2,                4,      1,             mdy("7/07/17"), -4,
+          "B",    2,                4,      1,             mdy("7/08/17"), -4,
+          "B",    2,                4,      1,             mdy("7/09/17"), -4,
+          "B",    2,                4,      2,             mdy("7/04/17"), 2,
+          "B",    2,                4,      2,             mdy("6/30/17"), 2,
+          "B",    2,                4,      4,             mdy("6/14/17"), 1,
+          "B",    2,                5,      3,             mdy("7/5/17"), 2,
+          "B",    2,                6,      4,             mdy("7/11/17"), 2,
+          "B",    2,                7,      1,             mdy("7/7/17"), -2,
+          "B",    2,                8,      1,             mdy("7/9/17"), 10,
+          "B",    2,                10,     3,             mdy("7/04/17"), 15,
+          "B",    3,                2,      2,             mdy("7/18/17"), -3,
+          "B",    3,                3,      3,             mdy("7/21/17"), 2,
+          "B",    3,                5,      3,             mdy("7/21/17"), 2,
+          "B",    3,                9,      2,             mdy("7/20/17"), 1
+  )
+```
+
+It's clear from these plots that some of the shoots we chose are "dormant" and just didn't grow at all.  I'm not really interested in those shoots, so I'd like to filter them out somehow.  Just by eyeballying Field B interharvest 2 I'd say plant 5 shoot 7, plant 6 shoot 7, plant 9 shoot 4, and plant 3 shoot 4 are good examples of ones I'd want to filter out.
+
+Two ways to approach this:
+
+1. threshold
+    + this one is easy.  
+    + calculate $\Delta L = Length_f - Length_i$
+    + Filter out any shoots where $\Delta L < 0.5$ for example
+    
+2. difference from other shoots on that plant
+    + more difficult
+    + This might be better though, since some plants just clearly didn't grow very much (e.g. plant 7) and then I'd be getting rid of real data.
+    + get a mean $\Delta L$ for the whole plant
+    + filter by removing $\Delta L_i < \Delta L_\mu - 1SD$ or something like that?
+    
+**Threshold**
+Remove any shoots with $\Delta L$ less than 0.5 and see what that does
+
+```{r message=FALSE, warning=FALSE}
+shoot.deltaL <- shoot.data %>% 
+  group_by(Field, interharvest, Plant, Shoot) %>% # for every field, interharvest, plant, shoot combination (but over time)
+  summarise(Delta.L = max(Shoot.Length, na.rm = TRUE) - min(Shoot.Length, na.rm = TRUE)) #calculate a total growth in cm
+
+shoot.active <- full_join(shoot.data, shoot.deltaL) %>% #add the Delta.L column to the full data set
+  filter(Delta.L > 0.5) #get rid of any shoots that didn't grow more than 0.5 cm
+```
+
+```{r}
+# Plot helper -------------------------------------------------------------
+#calculate how many dormant shoots removed
+no.removed <- shoot.active %>% 
+  filter(Field == which.field & interharvest.no == which.harvest) %>%
+  group_by(Plant) %>% 
+  summarise(active.shoots = length(unique(Shoot))) %>% 
+  mutate(missing = 7-active.shoots) %>%
+  select(missing) %>% colSums()
+
+# Plot --------------------------------------------------------------------
+shoot.active %>%
+  filter(Field == which.field & interharvest.no == which.harvest) %>% 
+  ggplot(aes(x = Date, y = Shoot.Length)) +
+   geom_line(aes(color = Shoot)) +
+   facet_wrap("Plant", ncol = 5) +
+   theme_bw() +
+   ylab("Shoot Length (cm)") +
+   theme(axis.text.x = element_text(angle = 60, hjust = 1)) +
+   ggtitle(paste0("Field ", which.field),
+           subtitle = paste0("Interharvest period ", which.harvest, ": ", day.no, " days", ", ", no.removed, " dormant shoots removed"))
+```
+
+Yeah, that seems like it'll work fine.  The only problem is it might remove actively growing shoots that died before end of interharvest period.
+
+## Plotting relative growth rate
+
+Growth rate varies among fields and harvests quite a bit
+```{r}
+shoot.data %>% 
+  group_by(field, interharvest.no) %>% 
+  summarize(mean_growth = mean(growth, na.rm = TRUE))
+```
+
+
+### Growth rate over time
+```{r}
+shoot.data %>% 
+  filter(Field == which.field & interharvest.no == which.harvest) %>% 
+  ggplot(aes(x = Date, y = Shoot.Growth)) +
+   geom_line(aes(color = Shoot)) +
+   facet_wrap("Plant", ncol = 5) +
+   theme_bw() +
+   ylab("r") +
+   theme(axis.text.x = element_text(angle = 60, hjust = 1)) +
+   ggtitle(paste("Field", which.field), subtitle = paste0("Interharvest period ", which.harvest, ": ", day.no, " days"))
+```
+
+### Growth rate as a function of temperature
+
+```{r}
+ggplot(shoot.data, aes(x = lag(temp_mean, n = 1), y = growth)) +
+  geom_point(alpha = 0.3) +
+  facet_grid(field ~ interharvest.no) +
+  theme_bw() +
+  labs(x = "Mean temperature (ºC)", y = "growth rate (t1 - t0)") +
+  ggtitle("Shoot growth rate as a function of temperature") +
+  # ylim(0,2) +
+  geom_smooth(method = "lm")
+```
+
+### Growth rate as a function of precipitation
+```{r}
+ggplot(shoot.data, aes(x = rainfall.CAAS_0.1mm, y = Shoot.Growth)) +
+  geom_jitter(alpha = 0.2, height = 0, width = 0.03) +
+  #facet_grid(Field ~ interharvest.no) +
+  theme_bw() +
+  labs(x = "Rainfall (0.1mm)", y = "r") +
+  ggtitle("Shoot growth rate as a function of precipitation") +
+  ylim(0,2)
+```
+### Growthrate as a function of sunlight hours
+```{r}
+ggplot(shoot.data, aes(x = sun.hrs, y = Shoot.Growth)) +
+  geom_jitter(alpha = 0.2, height = 0, width = 0.03) +
+  #facet_grid(Field ~ interharvest.no) +
+  theme_bw() +
+  labs(x = "sunlight hous", y = "r") +
+  ggtitle("Shoot growth rate as a function of sunlight") +
+  ylim(0,2)
+```
+Might be better as categorical: cloudy vs. sunny.
+```{r}
+ggplot(filter(shoot.data, Shoot.Growth < 2), aes(x = as.factor(ifelse(sun.hrs == 0, "cloudy", "sunny")) , y = Shoot.Growth)) +
+  geom_violin()
+  #facet_grid(Field ~ interharvest.no) +
+  theme_bw() +
+  labs(x = "sunlight hous", y = "r") +
+  ggtitle("Shoot growth rate as a function of sunlight") +
+  ylim(0,2)
+```
+
+
+# Modeling
+I've done some data simulation and modeling in plantsim.Rmd.  I will use those models as a basis for my analysis.
+

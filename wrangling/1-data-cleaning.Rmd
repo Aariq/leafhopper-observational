@@ -37,7 +37,6 @@ The goal of this script is simply to read in the excel file used for entering da
 Also gonna use this to tidy up the temperature data, rainfall data (if needed) and merge stem diameter data with the shoot growth data
 
 **Things to do:**
- - Import and add your precip data from the rain guage
  - Import precip data from Li Xin
  
 # Leafhopper and plant data from field

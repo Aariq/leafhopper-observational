@@ -1,0 +1,244 @@
+---
+title: "Tea Plant Growth Simulator"
+author: "Eric Scott"
+output: 
+  html_document: 
+    number_sections: yes
+    toc: yes
+    toc_float: yes
+---
+
+```{r boilerplate, message=FALSE, warning=FALSE}
+library(tidyverse) #data wrangling and plotting
+library(broom) #tidying up summaries of models
+library(lme4) #mixed effect modeling
+library(Hmisc) #has a nice Lag function
+```
+
+## Simulate data that we will analyze
+
+
+### Simulation parameters that we will try to estimate
+I want to adapt this to be more like my experimental design.  In my design there were only 20 plants total (split between two fields) and I measured 7 shoots on each plant.  The growth of each shoot varied, maybe depending on stem diameter (which I measured once).  It's possible that growth rate varied **more** by stem diameter than it did between plants.
+
+To simulate a co-variate like stem-diameter, I need to give each shoot a stem diamter at random, have an effect of stem diamter (and some standard deviation) and adjust the growth rate for that shoot accordingly. I think the best way to do this is to build the growth matrixes separately for each plant (so 20 matrixes) and combine them.
+```{r parameters to estimate}
+N = 10 # number of plants
+n.shoot = 7 #number of shoots per plant
+
+# Mean daily growth rate of plants and sd
+# there is variance from day to day
+plant.r.mean = 1.05
+plant.r.sd = 0.008
+
+# Random effect for growth rate of plants
+# Some plants just have better growth than others
+random.effect.sd = 0.005
+plant.id.effects = rnorm(N, 0, random.effect.sd) #The actual adjustment for each plant
+
+# Shoots with larger stem diameters maybe grow faster
+stem.dia.effect = 0.005
+
+```
+**note, I have not simulated any random effect of shoot within plant.  I might need to do that**
+
+### Conduct the simulation
+Although I was at the tea farm for about 50 days, I reset the shoot measurements everytime there was a harvest. Sometimes this was only ~15 days, sometimes it was more like 30 days.
+```{r additional parameters}
+time = 15 # days
+
+# Generate some random daily temperatures
+daily.temperature = as.numeric(scale(diffinv(rnorm(time-1))))
+```
+
+**I'm not entirely sure what `diffinv()` is doing here.  How can I make these temperatures realistic (in units of ºC)?**
+
+```{r temperature effects}
+#This is the effect of daily temperature on plant growth
+temperature.effect.B1 = 0.005
+temperature.effect.B2 = -0.003
+effect.est = temperature.effect.B1*daily.temperature + temperature.effect.B2*daily.temperature^2
+plot(effect.est~daily.temperature)
+plot(daily.temperature)
+```
+**Why are there two different temperature effect parameters?  Is this just to get the shape right where high temperatures are detrimental to plant growth?  I'm not sure this shape makes sense.**
+
+I modified this to account for multiple shoots per plant.  It generates a list of matrices, one matrix for each plant with 7 columns, one for each shoot, and rows for each day of growth.
+```{r simulate growth}
+growth.matrixes <- replicate(N, matrix(NA, nrow = time, ncol = n.shoot), simplify = FALSE)
+initial.shoot.sizes <- replicate(N, runif(n.shoot, 2, 5), simplify = FALSE)
+stem.diameters <- replicate(N, rnorm(n.shoot, 0.25, 0.05), simplify = FALSE)
+
+for(i in 1:N){
+  growth.matrixes[[i]][1, ] <- initial.shoot.sizes[[i]]
+}
+
+
+#simulate growth
+
+for(id in 1:N){
+  for (i in 1:n.shoot){
+    for (t in 2:time){
+        temp.today = daily.temperature[t]
+       
+         #daily growth rate (with random effect for plant added in)
+        r.today = rnorm(1,
+                        plant.r.mean + plant.id.effects[id] + stem.dia.effect*stem.diameters[[id]][i],
+                        plant.r.sd)
+        
+        #adjustment for weather effect today
+        r.today = r.today + (temperature.effect.B1*temp.today + temperature.effect.B2*temp.today^2)
+
+        # Size today depends on size yesterday multiplied by growth rate
+        growth.matrixes[[id]][t,i] = growth.matrixes[[id]][t-1, i] * r.today
+    }
+  }
+}
+names(growth.matrixes) <- paste0("plant", 1:N)
+
+#this combines matrixes into a data frame
+(growth.data <- data.frame(lapply(data.frame(growth.matrixes), unlist)))
+```
+
+### Tidy data
+Put the data into a format appropriate for modeling.
+```{r}
+growth.data.tidy <- growth.data %>%
+  rownames_to_column(var = "Day") %>%                     #rownumbers represent days
+  gather(-Day, key = plant.shoot, value = height) %>%     #similar to reshape
+  separate(plant.shoot, into = c("plant", "shoot")) %>%   #E.g. splits plant1.1 into plant1 | 1
+  mutate(Day = as.integer(Day))                           #by default, rownames_to_column uses character
+
+# Add stem diameter to data frame
+names(stem.diameters) <- paste0("plant", 1:N) #make a named list
+
+growth.data.tidy <- bind_rows(stem.diameters) %>%   #collapse list into a dataframe
+  add_column(shoot = as.character(1:n.shoot)) %>%   #add a column for shoot number to make merging easy
+  gather(-shoot, key = plant, value = stem.dia) %>% #gather into long format
+  full_join(growth.data.tidy)                       #join with data frame by "shoot" and "plant"
+
+#check that it worked
+# stem.diameters[[1]][1] == filter(growth.data.tidy, plant == "plant1" & shoot ==  1) %>% select(stem.dia)
+growth.data.tidy
+```
+### Plot growth trajectories
+```{r}
+ggplot(growth.data.tidy) +
+  geom_line(aes(x = Day, y = height, color = shoot)) +
+  facet_wrap("plant", ncol = 5)
+```
+These look a lot less noisy and variable than my actual data.  In the real data there is a lot more measurement error (lines more squiggly) as well as maybe a little more variation between shoots and plants.  Maybe I can adjust some parameters to make this more realistic.
+
+## Analyze the simulated data
+
+Raw data is size of each shoot of each plant on each day of season.
+We want to calculate daily growth rates for each plant to analyze with `lmer()`.
+
+### Calculate daily growth rates for each plant
+```{r calculate growth rates}
+#first, figure out how to lag heights to get height_t+1
+#stats::lag(growth.data.tidy$height, k = -1) #<- this one doesn't seem to work right
+#Hmisc::Lag(growth.data.tidy$height, shift = -1) #<-this one works like I'd expect
+
+#r = height_t+1/height_t
+growth.rates.data <- growth.data.tidy %>% 
+  group_by(plant, shoot) %>% 
+  mutate(height_t.1 = Lag(height, shift = -1),
+         r = Lag(height, shift = -1)/height,
+         temp = daily.temperature)            #might as well add the temperature data while I'm at it
+
+growth.rates.data
+# saveRDS(growth.rates.data, "growth rates data.rds")
+```
+
+### Plot the daily growth rates for each plant
+```{r plot growth rates}
+ggplot(growth.rates.data) +
+  geom_line(aes(x = Day, y = r, color = shoot)) +
+  facet_wrap("plant")
+```
+looks more noisy than the height data, but not sure how this compares to real data.
+
+
+### plot growth vs. temp
+```{r temperature vs growth plot}
+ggplot(growth.rates.data) +
+  geom_jitter(aes(x = temp, y = r), alpha = 0.25, width = 0.008) +
+  theme(legend.position="none")
+```
+
+## The actual statistical analyses
+
+### Basic linear model
+(no random effects or temperature effects)
+```{r intercept only}
+plant.lm1 = lm(r ~ 1, data = growth.rates.data)
+tidy(plant.lm1) %>% 
+  mutate(true.param = plant.r.mean) %>% 
+  select(term, estimate, std.error, true.param)
+```
+Estimated daily growth rate is `r round(coef(plant.lm1), 4)`
+This is actually pretty close to our true parameter, `r plant.r.mean`!
+
+### Add temperature effects
+```{r quadratic}
+plant.lm2 = lm(r ~ temp + I(temp^2), data = growth.rates.data)
+options(scipen = 5) #tunes cut-off for scientific notation for prettier output
+
+tidy(plant.lm2) %>%                              # turns output of model into dataframe.  Alternative to print()
+  mutate(true.param = c(plant.r.mean,            #add a column with the input parameters
+                        temperature.effect.B1,
+                        temperature.effect.B2)) %>% 
+  select(term, estimate, std.error, true.param)
+```
+Estimated daily growth rate is `r round(coef(plant.lm2)[1], 4)`
+This is closer to our true parameter, `r plant.r.mean`.
+Weather effects are estimated at `r round(coef(plant.lm2)[2], 4)` (not bad) and `r round(coef(plant.lm2)[3], 5)` (not bad, but a bit off)
+
+### Add stem diameter covariate
+```{r quadratic with stem diameter}
+plant.lm3 = lm(r ~ temp*stem.dia + I(temp^2)*stem.dia, data = growth.rates.data)
+options(scipen = 5)
+
+tidy(plant.lm3) %>%
+  mutate(true.param = c(plant.r.mean,
+                        temperature.effect.B1,
+                        stem.dia.effect,
+                        temperature.effect.B2,
+                        NA,
+                        NA)) %>%
+  select(term, estimate, std.error, true.param)
+```
+
+### Random plant ID effects and fixed temperature effects
+```{r lmer with plantID}
+plant.lmer = lmer(r ~ temp + I(temp^2) + (1|plant), data = growth.rates.data)
+options(scipen = 6)
+
+tidy(plant.lmer) %>%
+  mutate(true.param = c(plant.r.mean,
+                        temperature.effect.B1,
+                        temperature.effect.B2,
+                        plant.r.sd,
+                        NA)) %>%
+  select(term, estimate, std.error, true.param, group)
+```
+Estimated daily growth rate is `r round(summary(plant.lmer)$coef[1, 1], 4)`
+This is the same as without the random effects.
+Weather effects are `r round(summary(plant.lmer)$coef[2, 1], 4)` (not bad) and `r round(summary(plant.lmer)$coef[3, 1], 5)` (not bad, but a bit off)
+Random effect for plant id is *WAAAAY* lower than the true estimate
+
+### Add stem diameter to lmer model
+```{r lmer with plantID and stem diameter}
+plant.lmer2 = lmer(r ~ temp + I(temp^2) + stem.dia + (1|plant), data = growth.rates.data)
+options(scipen = 6)
+
+tidy(plant.lmer2) %>%
+  mutate(true.param = c(plant.r.mean,
+                        temperature.effect.B1,
+                        temperature.effect.B2,
+                        stem.dia.effect,
+                        plant.r.sd,
+                        NA)) %>%
+  select(term, estimate, std.error, true.param, group)
+```
