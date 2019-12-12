@@ -1,0 +1,171 @@
+---
+title: "Inspecting plant growth data"
+author: "Eric R. Scott"
+date: "Date Initiated"
+output: 
+  html_notebook: 
+    highlight: kate
+    theme: yeti
+    toc: yes
+    toc_float: yes
+    number_sections: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+*Last compiled: `r Sys.Date()`*
+
+```{r packages, include=FALSE}
+library(tidyverse)
+library(here)
+library(plotly)
+```
+
+# Purpose
+
+What is the goal of this notebook?
+
+# Load Data
+
+```{r data, echo=TRUE}
+shoot.data <- read_rds(here("data", "cleaned", "shoots.rds"))
+shoot.data
+```
+
+## Data Dictionary
+
+`shoot.data` contains
+
+ - `date`, the date of the observation
+ - `day`, day from first measurement 
+ - `field`, whether it's from field A or B
+ - `harvest`, did they hareves yesterday?
+ - `plant`, plant ID within field.  It's the same plant ever interharvest period
+ - `shoot`, shoot ID within plant.  These are different shoots each interhavest period
+ - `shoot_id`, unique shoot ID in the form of f{field}-h{interhaverst.no}-p{plant}-s{shoot#}
+ - `shoot_height` shoot height in cm
+ - `interharvest` Which interharvest period?  Date listed is the last day of that interharvest period
+ - `interharvest.no` Which interharvest period? 1-4 as character, for easier filtering and faceting in plots
+ - `growth` difference from the previous day's `shoot_height`
+ - `diameter` shoot diameter in (UNITS??)
+ - `temp_mean`, mean daily temperature in ºC
+ - `temp_max`, maximum daily temperature in ºC
+ - `temp_min`, minimum daily temperature in ºC
+ - `precip_caas`, precip from weather station in mm
+ - `sun_hrs`, from weather station
+ - `rh`, relative humidity from weather station
+ - `precip_mm`, precip from rain gauge
+
+```{r}
+shoot.data2 <- 
+  shoot.data %>% 
+  mutate(plant_id = paste0(field, plant)) %>% 
+  group_by(field, interharvest.no) %>% 
+  mutate(day_post = day - first(day),
+         temp_mean_lag = lag(temp_mean),
+         precip_lag = lag(precip_mm)) %>% 
+  ungroup()
+```
+
+
+# Exploratory Data Analysis
+
+## Plot growth
+
+Try plotting shoot length over time color = shoot ID, faceted by plant
+
+```{r}
+shoot_grouped <- 
+  shoot.data2 %>% 
+  group_by(field, interharvest.no) 
+df <- group_keys(shoot_grouped)
+names <- glue::glue("Field {df$field}, Harvest {df$interharvest.no}")
+
+shoot_growth_list <-
+  group_split(shoot_grouped) %>%
+  set_names(names)
+# names(shoot_growth_list)
+
+plotlist <-
+  map2(.x = shoot_growth_list, .y = names(shoot_growth_list), ~{
+  ggplot(.x, aes(x = date, y = shoot_height)) +
+    geom_line(aes(color = shoot)) +
+    facet_wrap(~plant) +
+    labs(title = .y) +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+})
+
+map(plotlist, ggplotly)
+```
+
+There are some obvious measurement errors.  Shoots can't shrink then grow.  I checked and these are not data entry errors.
+
+
+```{r}
+problem.data <-
+  tribble(~field, ~interharvest.no, ~plant, ~shoot, ~date, ~adjustment,
+          "A",    1,                1,      6,             mdy("6/09/17"), 1,
+          "A",    1,                1,      6,             mdy("6/22/17"), 1,
+          "A",    1,                1,      6,             mdy("6/23/17"), 1,
+          "A",    1,                1,      7,             mdy("6/12/17"), -1,
+          "A",    1,                3,      7,             mdy("6/07/17"), -1,
+          "A",    1,                3,      4,             mdy("6/07/17"), -1,
+          "A",    1,                3,      5,             mdy("6/11/17"), 1,
+          "A",    1,                3,      5,             mdy("6/14/17"), 1,
+          "A",    1,                5,      2,             mdy("6/11/17"), -1,
+          "A",    1,                6,      4,             mdy("6/07/17"), -1,
+          "A",    1,                6,      7,             mdy("6/08/17"), -1,
+          "A",    1,                8,      7,             mdy("6/10/17"), 1,
+          "A",    1,                8,      7,             mdy("6/14/17"), 1,
+          "A",    1,                8,      3,             mdy("6/14/17"), -1,
+          "A",    1,                8,      3,             mdy("6/17/17"), -1,
+          "A",    1,                9,      3,             mdy("6/19/17"), 1,
+          "A",    2,                2,      1,             mdy("7/01/17"), -2,
+          "A",    2,                3,      6,             mdy("7/02/17"), 1,
+          "A",    2,                8,      6,             mdy("7/07/17"), -3,
+          "A",    3,                1,      3,             mdy("7/15/17"), -1,
+          "A",    3,                2,      3,             mdy("7/14/17"), -1,
+          "B",    1,                5,      4,             mdy("6/07/17"), -1,
+          "B",    1,                6,      2,             mdy("6/07/17"), 2,
+          "B",    2,                1,      5,             mdy("6/16/17"), 1,
+          "B",    2,                1,      5,             mdy("7/08/17"), 1,
+          "B",    2,                1,      2,             mdy("6/24/17"), -3,
+          "B",    2,                1,      3,             mdy("7/06/17"), 3,
+          "B",    2,                1,      3,             mdy("7/07/17"), 3,
+          "B",    2,                2,      1,             mdy("6/25/17"), -2,
+          "B",    2,                4,      1,             mdy("6/20/17"), -2,
+          "B",    2,                4,      1,             mdy("7/01/17"), -3,
+          "B",    2,                4,      1,             mdy("7/02/17"), -3,
+          "B",    2,                4,      1,             mdy("7/05/17"), -4,
+          "B",    2,                4,      1,             mdy("7/06/17"), -4,
+          "B",    2,                4,      1,             mdy("7/07/17"), -4,
+          "B",    2,                4,      1,             mdy("7/08/17"), -4,
+          "B",    2,                4,      1,             mdy("7/09/17"), -4,
+          "B",    2,                4,      2,             mdy("7/04/17"), 2,
+          "B",    2,                4,      2,             mdy("6/30/17"), 2,
+          "B",    2,                4,      4,             mdy("6/14/17"), 1,
+          "B",    2,                5,      3,             mdy("7/5/17"), 2,
+          "B",    2,                6,      4,             mdy("7/11/17"), 2,
+          "B",    2,                7,      1,             mdy("7/7/17"), -2,
+          "B",    2,                8,      1,             mdy("7/9/17"), 10,
+          "B",    2,                10,     3,             mdy("7/04/17"), 15,
+          "B",    3,                2,      2,             mdy("7/18/17"), -3,
+          "B",    3,                3,      3,             mdy("7/21/17"), 2,
+          "B",    3,                5,      3,             mdy("7/21/17"), 2,
+          "B",    3,                9,      2,             mdy("7/20/17"), 1
+  )
+
+adjust <-
+  problem.data %>%
+  mutate(shoot_id = paste0("f", field, "-h", interharvest.no, "-p", plant, "-s", shoot)) %>% 
+  select(shoot_id, date, adjustment)
+
+shoot.data <-
+  left_join(shoot.data, adjust) %>% 
+  mutate(shoot_height = ifelse(!is.na(adjustment), shoot_height + adjustment, shoot_height))
+```
+
+
+Only a couple of these are especially egregious and preliminary analysis shows that "fixing" these errors doesn't change the results.
