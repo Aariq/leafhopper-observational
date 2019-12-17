@@ -27,10 +27,11 @@ conflict_prefer("lag", "dplyr")
 conflict_prefer("here", "here")
 ```
 
-#Purpose
+# Purpose
 
-gathering of shoots by plant and date, and reading in of stem diameter data done in the shoot growth script. One challenge is that every inter-harvest period the shoots are re-set.  That limits me from using all the data easily.  The way I'm thinking of dealing with this is to separate the data into fields and harvest periods, calculate relative growth rates, match them to daily temperatures, and then re-combine the data for modeling.
+gathering of shoots by plant and date, and reading in of stem diameter data done in the shoot growth script. One challenge is that every inter-harvest period the shoots are re-set.  That's why in some places I've split by field and then recombined.
 
+# Read in data
 ```{r}
 growth <- read_rds(here("data", "cleaned", "shoot-growth.rds"))
 diameter <- read_rds(here("data", "cleaned", "shoot-diameter.rds"))
@@ -39,19 +40,24 @@ caas <- read_rds(here("data", "cleaned", "weather-caas.rds"))
 rain_gauge <- read_rds(here("data", "cleaned", "rain-gauge.rds"))
 caas_sub <-
   caas %>% 
-    select(date, precip_caas = precip_caas_0.1mm, sun_hrs, rh)
+    select(date, temp_mean_caas, temp_max_caas, temp_min_caas)
 ```
 
-### Read in data and split by field
-Load data, separate fields A and B
+`growth`: field data including plant growth and leafhopper densities
+`diameter`: stem diameters taken once per harvest
+`hobo`: daily summary of datalogger temps
+`caas`: weather station data.  Note: temperature matches the datalogger well, but precipitation does not.
+`rain_gauge`: precipitation data from a rain gauge that I installed on the farm.  This record is incomplete, as the shipping of the rain gauge was delayed.
+
+
+Separate fields A and B
 ```{r, message=TRUE, warning=TRUE}
 input.A <- growth %>% filter(field == "A")
 input.B <- growth %>% filter(field == "B")
 ```
 
-### Split by inter-harvest period
+# Create inter-harvest periods
 
-#### Extract harvest dates and create inter-harvest intervals
 Find harvest dates for both fields
 ```{r find harvest dates}
 #Find the harvest dates, i.e. the first date of each inter-harvest period.
@@ -123,15 +129,8 @@ data.B <- input.B %>%
 
 Now I group by interhavest period and calculate a growth rate for each shoot on each day.
 
-Absolute growth rate:
-$$
-AGR = \frac{S_2 - S_1}{t_2 - t_1}
-$$
-Also calulate growth like this:
+Preliminary analysis leads me to believe a linear growth rate is best ($h_2 - h_1$), but I'll also calculate a geometric growth rate ($r = h_2/h_1$)
 
-$$
-r = S_2/S_1
-$$
 ```{r}
 data.B.full <- 
   data.B %>% 
@@ -151,28 +150,7 @@ data.A.full <-
 ```
 
 
-### Join with weather data
-read in temperature data and join with field A and B data.  Because shoot measurements are taken early in the morning, its the temperature of the previous day that is most relevant.  I create an "effective date" to allow easy merging of the two data sources.
-
-```{r}
-data.B.wtemp <-
-  left_join(data.B.full, hobo, by = "date") 
-data.B.weather <-
-  left_join(data.B.wtemp, caas_sub, by = "date")
-data.B.weather2 <-
-  left_join(data.B.weather, rain_gauge, by = "date")
-
-data.A.wtemp <-
-  left_join(data.A.full, hobo, by = "date") 
-data.A.weather <-
-  left_join(data.A.wtemp, caas_sub, by = "date")
-data.A.weather2 <-
-  left_join(data.A.weather, rain_gauge, by = "date")
-```
-
-
-
-### Join with stem diameter data
+# Join with stem diameter data
 
 Now the trick is joining it to the rest of the data correctly. Since the date the stem diameter was measured on isn't the first day of measurements always, I should do the same interharvest thing I did before and join by that column.  FIRST, I have to split by field in order to do that.
 
@@ -222,6 +200,7 @@ dia.data2 <-
 ```
 
 Now I can join it with the shoot data
+
 ```{r}
 shoot.data <- bind_rows(data.A.full, data.B.full) %>% left_join(dia.data2)
 ```
@@ -231,13 +210,22 @@ shoot.data <- bind_rows(data.A.full, data.B.full) %>% left_join(dia.data2)
 ```{r}
 shoot_data_full <-
   left_join(shoot.data, hobo, by = "date") %>% 
-  left_join(caas_sub, by = "date") %>% 
-  left_join(rain_gauge, by = "date")
-shoot_data_full
+  full_join(caas_sub, by = "date") %>% #full join to keep weather data previous to start of measurments
+  left_join(rain_gauge, by = "date") %>%
+  arrange(date)
 ```
 
+Now I need to replace the NAs for temperature with the CAAS data
 
-
+```{r}
+shoot_data_full <-
+  shoot_data_full %>% 
+  mutate(temp_mean = ifelse(is.na(temp_mean), temp_mean_caas, temp_mean),
+         temp_max = ifelse(is.na(temp_max), temp_max_caas, temp_max),
+         temp_min = ifelse(is.na(temp_min), temp_min_caas, temp_min)) %>% 
+  select(-ends_with("caas"))
+shoot_data_full
+```
 
 
 ### Export shoot growth data
