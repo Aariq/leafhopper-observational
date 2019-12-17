@@ -88,24 +88,12 @@ Fit a line for each shoot (within each interharvest period).  Then, use the slop
 # Data pre-treatment
 ## Prep for option 1
 
-1. create appropriately lagged variables.  Since shoot growth is measured in the morning, the most relevant weather events are the day before.
 
-**TODO:** I could actually add previous days of temperature from the weather station data so I don't loose a row when I lag the shoot measurements.
+1. Create variable for # days post harvest and variable for start date.
 
 ```{r}
-shoot.data2 <- 
-  shoot.data %>% 
-  group_by(shoot_id) %>% #within each shoot_id...
-  arrange(date) %>% #sort by date...
-  mutate_at(vars(starts_with("temp_")), lag) %>% #then move all the temperature measurements back a day
-  mutate_at(c("precip_caas", "sun_hrs", "rh", "precip_mm"), lag) #and the rest of the weather
-# skimr::skim(shoot.data2)
-```
-
-2. Create variable for # days post harvest and variable for start date.
-```{r}
-shoot.data3 <-
-  shoot.data2 %>%
+shoot.data2 <-
+  shoot.data %>%
   mutate(day_post = day - first(day),
          start = first(day),
          mean_day = mean(day)) %>%
@@ -115,17 +103,18 @@ shoot.data3 <-
 ```
 
 3. create unique IDs for plant and interharvest number nested within field
+
 ```{r}
-shoot.data4 <-
-  shoot.data3 %>% 
+shoot.data3 <-
+  shoot.data2 %>% 
   mutate(plant_id = paste0(field, plant),
          interharvest_id = paste0(field, interharvest.no)) 
 ```
 
 4. Remove NA's and outliers for growth data
 ```{r}
-shoot.data5 <-
-  shoot.data4 %>% 
+shoot.data4 <-
+  shoot.data3 %>% 
   filter(!is.na(growth)) %>% 
   filter(!is.na(diameter)) %>% 
   filter(growth < 5 & growth > -5)
@@ -135,7 +124,7 @@ shoot.data5 <-
 
 ```{r}
 # shoot.data5 %>% group_by(interharvest_id) %>% summarize(max(day_post))
-shoot.data6 <- shoot.data5 %>% filter(interharvest_id != "B1")
+shoot.data5 <- shoot.data4 %>% filter(interharvest_id != "B1")
 # shoot.data6 %>% group_by(interharvest_id) %>% summarize(mean(mean_day))
 ```
 
@@ -149,16 +138,16 @@ shoot.data6 <- shoot.data5 %>% filter(interharvest_id != "B1")
 
 ```{r}
 temp.lmer <-
-  lmer(growth ~ temp_mean + I(temp_mean^2)+ day_post + diameter + mean_day + (1|interharvest_id),
-                   data = shoot.data6)
+  lmer(growth ~ temp_mean_lag + I(temp_mean_lag^2)+ day_post + diameter + mean_day + (1|interharvest_id),
+                   data = shoot.data5)
 summary(temp.lmer)
 ```
 ## Does random effect matter?
 
 ```{r}
 temp.lm <-
-  lm(growth ~ temp_mean + I(temp_mean^2) + day_post + diameter + mean_day,
-                   data = shoot.data6)
+  lm(growth ~ temp_mean_lag + I(temp_mean_lag^2) + day_post + diameter + mean_day,
+                   data = shoot.data5)
 lmtest::lrtest(temp.lmer, temp.lm)
 ICtab(temp.lm, temp.lmer)
 ```
@@ -169,8 +158,8 @@ Winner = temp.lmer
 
 ```{r}
 temp.lmer2 <-
-  lmer(growth ~ temp_mean + I(temp_mean^2) + day_post + diameter  + (1|interharvest_id),
-                   data = shoot.data6)
+  lmer(growth ~ temp_mean_lag + I(temp_mean_lag^2) + day_post + diameter  + (1|interharvest_id),
+                   data = shoot.data5)
 
 lmtest::lrtest(temp.lmer, temp.lmer2)
 ICtab(temp.lm, temp.lmer, temp.lmer2)
@@ -181,8 +170,8 @@ Winner = temp.lmer2
 ## Which fits better, qudratic or linear?
 ```{r}
 temp.lmer3 <-
-  lmer(growth ~ temp_mean + day_post + diameter  + (1|interharvest_id),
-                   data = shoot.data6)
+  lmer(growth ~ temp_mean_lag + day_post + diameter  + (1|interharvest_id),
+                   data = shoot.data5)
 lmtest::lrtest(temp.lmer2, temp.lmer3)
 ICtab(temp.lm, temp.lmer, temp.lmer2, temp.lmer3)
 ```
@@ -207,7 +196,7 @@ fixef(temp.lmer3) -> coefs
 coefs
 eq <- function(x) coefs[1] + coefs[2]*x
 
-ggplot(shoot.data6, aes(x = temp_mean, y = growth, color = day_post, size = diameter)) +
+ggplot(shoot.data5, aes(x = temp_mean, y = growth, color = day_post, size = diameter)) +
   geom_point(alpha = 0.1) +
   stat_function(fun = eq) + #not sure if this is correct.  Probably fitted to smallest diameter and 0days post harvest
   labs(x = "Mean daily temperature (ºC)",
@@ -220,7 +209,7 @@ Fit lines to shoot height over time!
 
 ```{r}
 shoot.slopes <-
-  shoot.data6 %>% 
+  shoot.data5 %>% 
   group_by(shoot_id) %>%  #for every unique shoot
   nest() %>% 
   mutate(model = map(data, ~lm(shoot_height ~ day_post, data = .))) %>% 
@@ -233,9 +222,9 @@ Calculate mean temp for each period?
 plus keep diameter and field and mean harvest date?
 ```{r}
 field.summary <-
-  shoot.data6 %>% 
+  shoot.data5 %>% 
   group_by(shoot_id) %>% 
-  summarize(mean_temp_mean = mean(temp_mean),
+  summarize(mean_temp_mean = mean(temp_mean_lag),
             diameter = mean(diameter),
             field = first(field),
             mean_day = mean(day),

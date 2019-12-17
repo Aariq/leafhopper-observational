@@ -206,24 +206,37 @@ shoot.data <- bind_rows(data.A.full, data.B.full) %>% left_join(dia.data2)
 ```
 
 # Add weather data
+First, I'll join the weather station data to the hobo data to extrapolate temperature data backwards in time.  Preliminary analysis showed that the temperature matched well between the hobo logger and the CAAS weather data.  Precipitation, however, did not match.
 
 ```{r}
+temperature <-
+  full_join(caas_sub, hobo) %>% 
+    mutate(temp_mean = ifelse(is.na(temp_mean), temp_mean_caas, temp_mean),
+         temp_max = ifelse(is.na(temp_max), temp_max_caas, temp_max),
+         temp_min = ifelse(is.na(temp_min), temp_min_caas, temp_min)) %>% 
+    select(-ends_with("caas"))
+```
+## Lag weather data and join.
+Because plant measurements were taken in the morning, the relevant weather was from the previous day.  I'll lag the weather data by one day and then join with the shoot growth.
+
+```{r}
+temperature_lag <- 
+  temperature %>%
+  arrange(date) %>% 
+  mutate_at(vars(starts_with("temp")), list(lag = lag))
+
+rain_lag <-
+  rain_gauge %>%
+  arrange(date) %>% 
+  mutate(precip_mm_lag = lag(precip_mm))
+
 shoot_data_full <-
-  left_join(shoot.data, hobo, by = "date") %>% 
-  full_join(caas_sub, by = "date") %>% #full join to keep weather data previous to start of measurments
-  left_join(rain_gauge, by = "date") %>%
+  left_join(shoot.data, temperature_lag, by = "date") %>% 
+  left_join(rain_lag, by = "date") %>%
   arrange(date)
 ```
 
-Now I need to replace the NAs for temperature with the CAAS data
-
 ```{r}
-shoot_data_full <-
-  shoot_data_full %>% 
-  mutate(temp_mean = ifelse(is.na(temp_mean), temp_mean_caas, temp_mean),
-         temp_max = ifelse(is.na(temp_max), temp_max_caas, temp_max),
-         temp_min = ifelse(is.na(temp_min), temp_min_caas, temp_min)) %>% 
-  select(-ends_with("caas"))
 shoot_data_full
 ```
 
