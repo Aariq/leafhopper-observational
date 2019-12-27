@@ -81,8 +81,9 @@ Daily growth rate calculated at $r = h_{t+1} - h_t$.  Then I would model growth 
 
 Can I use mean harvest date as a fixed effect?  I think we decided no, but I'm not sure why.
 
-### Option 2: Fit lines for each shoot
-Fit a line for each shoot (within each interharvest period).  Then, use the slope of that line as a response variable.  Then, I'd need to calcualte a cumulative effect of temperature like cumulative degree days.  This variable could include a quadratic effect (e.g. cumulative degree days = cum(temp) + cum(temp^2), I think).  Then I'd model growth rate (slope) as a function of cumulative degree days and mean interharvest date, as a way to see if growth rate changes over the summer independently of temperature.  This model would include a co-variate of stem diameter and random effect of plant nested in field.
+### Option 2: Distributed lag model
+I don't think this is as important for shoot growth as it is for leafhopper densities, but I'll implement it here anyways as a test.
+
 
 
 # Data pre-treatment
@@ -131,8 +132,6 @@ shoot.data5 <- shoot.data4 %>% filter(interharvest_id != "B1")
 
 
 # Analysis for daily growth rate model
-
-
 
 ## Start with full model
 
@@ -203,48 +202,44 @@ ggplot(shoot.data5, aes(x = temp_mean, y = growth, color = day_post, size = diam
        y = "Shoot growth (cm)")
 ```
 
-# Pre-treatment for option 2, fitting lines to shoots
 
-Fit lines to shoot height over time!
-
+# Distributed Lag Model
 ```{r}
-shoot.slopes <-
-  shoot.data5 %>% 
-  group_by(shoot_id) %>%  #for every unique shoot
-  nest() %>% 
-  mutate(model = map(data, ~lm(shoot_height ~ day_post, data = .))) %>% 
-  mutate(intercept = map_dbl(model, ~coef(.)[1]),
-         slope = map_dbl(model, ~coef(.)[2])) %>%
-  filter(!is.na(slope))
+library(dlnm)
+```
+```{r}
+shoot.data5
 ```
 
-Calculate mean temp for each period?
-plus keep diameter and field and mean harvest date?
+## Construct lagged temp variable
+I want a quadratic effect and a linear effect to use in models.  The lag kernel will be estimated as a spline.
 ```{r}
-field.summary <-
-  shoot.data5 %>% 
-  group_by(shoot_id) %>% 
-  summarize(mean_temp_mean = mean(temp_mean_lag),
-            diameter = mean(diameter),
-            field = first(field),
-            mean_day = mean(day),
-            interharvest_id = first(interharvest_id)
-            )
+temp_k_quad <- crossbasis(
+  shoot.data5$temp_mean, # the variable
+  lag = 7, #maximum lag
+  argvar = list(fun = "poly", degree = 2),
+  arglag = list(fun = "cr") # basis for lag, a penalized cubic B-spline
+)
+summary(temp_k_quad)
 ```
 
-Join em
-
 ```{r}
-shoot.summary <- left_join(shoot.slopes, field.summary)
+temp_k_lin <- crossbasis(
+  shoot.data5$temp_mean, # the variable
+  lag = 7, #maximum lag
+  argvar = list(fun = "lin"),
+  arglag = list(fun = "cr") # basis for lag, a penalized cubic B-spline
+)
+summary(temp_k_lin)
 ```
-
-model it
-
 ```{r}
-m <- lm(slope ~ mean_temp_mean + diameter, data = shoot.summary)
-Anova(m)
+temp.lmer <-
+  lmer(growth ~ temp_k_lin + diameter + day_post + (1|interharvest_id), data = shoot.data5)
+
+m<- lm(growth ~ temp_k_quad, data = shoot.data5)
+
+
 summary(m)
+Anova(m)
 ```
-uhhhh temperature has negative effect on slope?!? the fuck?
-
 
