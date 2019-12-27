@@ -40,7 +40,8 @@ caas <- read_rds(here("data", "cleaned", "weather-caas.rds"))
 rain_gauge <- read_rds(here("data", "cleaned", "rain-gauge.rds"))
 caas_sub <-
   caas %>% 
-    select(date, temp_mean_caas, temp_max_caas, temp_min_caas)
+    select(date, temp_mean_caas, temp_max_caas, temp_min_caas) %>% 
+  filter(year(date) == 2017)
 ```
 
 `growth`: field data including plant growth and leafhopper densities
@@ -216,24 +217,25 @@ temperature <-
          temp_min = ifelse(is.na(temp_min), temp_min_caas, temp_min)) %>% 
     select(-ends_with("caas"))
 ```
-## Lag weather data and join.
-Because plant measurements were taken in the morning, the relevant weather was from the previous day.  I'll lag the weather data by one day and then join with the shoot growth.
+
+
+## Add dates for all shoots and join
 
 ```{r}
-temperature_lag <- 
-  temperature %>%
-  arrange(date) %>% 
-  mutate_at(vars(starts_with("temp")), list(lag = lag))
+shoot_data_joined <-
+  left_join(shoot.data, temperature, by = "date") %>% 
+  left_join(rain_gauge, by = "date") %>%
+  arrange(date)
 
-rain_lag <-
-  rain_gauge %>%
-  arrange(date) %>% 
-  mutate(precip_mm_lag = lag(precip_mm))
+prevtemp <-
+  temperature %>% 
+  filter(date < min(shoot.data$date)) 
 
 shoot_data_full <-
-  left_join(shoot.data, temperature_lag, by = "date") %>% 
-  left_join(rain_lag, by = "date") %>%
-  arrange(date)
+  shoot_data_joined %>%
+  group_by(shoot_id) %>% 
+  group_modify(~bind_rows(., prevtemp)) %>% 
+  arrange(shoot_id, date)
 ```
 
 ```{r}
