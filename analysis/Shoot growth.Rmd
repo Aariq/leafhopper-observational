@@ -95,9 +95,10 @@ I don't think this is as important for shoot growth as it is for leafhopper dens
 ```{r}
 shoot.data2 <-
   shoot.data %>%
-  mutate(day_post = day - first(day),
-         start = first(day),
-         mean_day = mean(day)) %>%
+  group_by(shoot_id) %>% 
+  mutate(day_post = day - min(day, na.rm = TRUE),
+         start = min(day, na.rm = TRUE),
+         mean_day = mean(day, na.rm = TRUE)) %>%
   ungroup()
 
 # shoot.data3 %>% filter(day_post ==0) %>% group_by(field) %>% count(interharvest.no)
@@ -112,22 +113,47 @@ shoot.data3 <-
          interharvest_id = paste0(field, interharvest.no)) 
 ```
 
-4. Remove NA's and outliers for growth data
+4. Remove first interharvest period for field B.  It was only 4 days, so I think data collection started in the middle of an interharvest period, making `day_post` unreliable as a co-variate for this replicate.
+
 ```{r}
-shoot.data4 <-
-  shoot.data3 %>% 
+shoot.data4 <- shoot.data3 %>% filter(interharvest_id != "B1")
+```
+
+
+6. Create lagged temperature variables
+
+```{r}
+shoot.data5 <-
+  shoot.data4 %>%
+  select(date, shoot_id, growth, diameter, temp_mean, day_post, mean_day, interharvest_id) %>% 
+  group_by(shoot_id) %>% 
+  arrange(date) %>% 
+  mutate(temp_lag1 = lag(temp_mean),
+         temp_lag2 = lag(temp_mean, n = 2L),
+         temp_lag3 = lag(temp_mean, n = 3L),
+         temp_lag4 = lag(temp_mean, n = 4L),
+         temp_lag5 = lag(temp_mean, n = 5L),
+         temp_lag6 = lag(temp_mean, n = 6L),
+         temp_lag7 = lag(temp_mean, n = 7L))
+```
+
+5. Remove outliers
+```{r}
+shoot.data6 <-
+  shoot.data5 %>%
+  filter(is.na(growth) | !growth > 5 & !growth < -5) 
+```
+
+7. Remove NAs
+```{r}
+shoot.data7 <- 
+  shoot.data6 %>% 
   filter(!is.na(growth)) %>% 
-  filter(!is.na(diameter)) %>% 
-  filter(growth < 5 & growth > -5)
+  filter(!is.na(diameter))
+
+shootdf <- shoot.data7
 ```
 
-5. Remove first interharvest period for field B.  It was only 4 days, so I think data collection started in the middle of an interharvest period, making `day_post` unreliable as a co-variate for this replicate.
-
-```{r}
-# shoot.data5 %>% group_by(interharvest_id) %>% summarize(max(day_post))
-shoot.data5 <- shoot.data4 %>% filter(interharvest_id != "B1")
-# shoot.data6 %>% group_by(interharvest_id) %>% summarize(mean(mean_day))
-```
 
 
 
@@ -137,16 +163,16 @@ shoot.data5 <- shoot.data4 %>% filter(interharvest_id != "B1")
 
 ```{r}
 temp.lmer <-
-  lmer(growth ~ temp_mean_lag + I(temp_mean_lag^2)+ day_post + diameter + mean_day + (1|interharvest_id),
-                   data = shoot.data5)
+  lmer(growth ~ temp_lag1 + I(temp_lag1^2)+ day_post + diameter + mean_day + (1|interharvest_id),
+                   data = shootdf)
 summary(temp.lmer)
 ```
 ## Does random effect matter?
 
 ```{r}
 temp.lm <-
-  lm(growth ~ temp_mean_lag + I(temp_mean_lag^2) + day_post + diameter + mean_day,
-                   data = shoot.data5)
+  lm(growth ~ temp_lag1 + I(temp_lag1^2) + day_post + diameter + mean_day,
+                   data = shootdf)
 lmtest::lrtest(temp.lmer, temp.lm)
 ICtab(temp.lm, temp.lmer)
 ```
@@ -157,8 +183,8 @@ Winner = temp.lmer
 
 ```{r}
 temp.lmer2 <-
-  lmer(growth ~ temp_mean_lag + I(temp_mean_lag^2) + day_post + diameter  + (1|interharvest_id),
-                   data = shoot.data5)
+  lmer(growth ~ temp_lag1 + I(temp_lag1^2) + day_post + diameter  + (1|interharvest_id),
+                   data = shootdf)
 
 lmtest::lrtest(temp.lmer, temp.lmer2)
 ICtab(temp.lm, temp.lmer, temp.lmer2)
@@ -169,8 +195,8 @@ Winner = temp.lmer2
 ## Which fits better, qudratic or linear?
 ```{r}
 temp.lmer3 <-
-  lmer(growth ~ temp_mean_lag + day_post + diameter  + (1|interharvest_id),
-                   data = shoot.data5)
+  lmer(growth ~ temp_lag1 + day_post + diameter  + (1|interharvest_id),
+                   data = shootdf)
 lmtest::lrtest(temp.lmer2, temp.lmer3)
 ICtab(temp.lm, temp.lmer, temp.lmer2, temp.lmer3)
 ```
@@ -195,7 +221,7 @@ fixef(temp.lmer3) -> coefs
 coefs
 eq <- function(x) coefs[1] + coefs[2]*x
 
-ggplot(shoot.data5, aes(x = temp_mean, y = growth, color = day_post, size = diameter)) +
+ggplot(shootdf, aes(x = temp_mean, y = growth, color = day_post, size = diameter)) +
   geom_point(alpha = 0.1) +
   stat_function(fun = eq) + #not sure if this is correct.  Probably fitted to smallest diameter and 0days post harvest
   labs(x = "Mean daily temperature (ºC)",
@@ -208,38 +234,82 @@ ggplot(shoot.data5, aes(x = temp_mean, y = growth, color = day_post, size = diam
 library(dlnm)
 ```
 ```{r}
-shoot.data5
+shootdf
 ```
 
 ## Construct lagged temp variable
-I want a quadratic effect and a linear effect to use in models.  The lag kernel will be estimated as a spline.
-```{r}
-temp_k_quad <- crossbasis(
-  shoot.data5$temp_mean, # the variable
-  lag = 7, #maximum lag
-  argvar = list(fun = "poly", degree = 2),
-  arglag = list(fun = "cr") # basis for lag, a penalized cubic B-spline
-)
-summary(temp_k_quad)
-```
+
+I first need to create a dataframe with columns for every lag, then use the matrix of lagged temperatures for each observation as input to `crossbasis`.
+
 
 ```{r}
-temp_k_lin <- crossbasis(
-  shoot.data5$temp_mean, # the variable
-  lag = 7, #maximum lag
-  argvar = list(fun = "lin"),
-  arglag = list(fun = "cr") # basis for lag, a penalized cubic B-spline
-)
-summary(temp_k_lin)
+temp_mat <-
+  shootdf %>%
+  ungroup() %>%
+  select(starts_with("temp")) %>% 
+  as.matrix()
+
+myexp <- function(x) exp(x)
+temp_k <-
+  crossbasis(
+  x = temp_mat,
+  # lag = 5,
+  argvar = list(fun = "poly", degree = 2),
+  # arglag = list(fun = "myexp"), #exponential decay??
+  arglag = list(fun = "poly", degree = 2),
+  # arglag = list(fun = "lin")
+  )
+summary(temp_k)
 ```
+
 ```{r}
 temp.lmer <-
-  lmer(growth ~ temp_k_lin + diameter + day_post + (1|interharvest_id), data = shoot.data5)
+  lmer(growth ~ temp_k + day_post + diameter + mean_day + (1|interharvest_id),
+                   data = shootdf)
 
-m<- lm(growth ~ temp_k_quad, data = shoot.data5)
-
-
-summary(m)
-Anova(m)
+temp.lm <-
+  lm(growth ~ temp_k + day_post + diameter + mean_day,
+                   data = shootdf)
+AICtab(temp.lmer, temp.lm)
 ```
 
+```{r}
+temp.lmer2 <-
+  lmer(growth ~ temp_k + day_post + diameter  + (1|interharvest_id),
+                   data = shootdf)
+temp.lmer3 <-
+  lmer(growth ~ temp_k  + diameter + mean_day + (1|interharvest_id),
+                   data = shootdf)
+
+
+AICtab(temp.lmer, temp.lmer2, temp.lmer3)
+
+temp.lmer4 <- 
+  lmer(growth ~ temp_k + day_post + (1|interharvest_id),
+                   data = shootdf)
+AICtab(temp.lmer2, temp.lmer4)
+```
+
+```{r}
+summary(temp.lmer2)
+Anova(temp.lmer2)
+```
+
+```{r}
+pred.temp <- crosspred(
+  temp_k, #the lagged predictor variable
+  temp.lmer2, #the glm model
+  # at=0:20, #what values of PM10 to evaluate at
+  bylag=0.2, #how fine to increment the lag space.  Small number makes smoother
+  cumul=TRUE #"incremental cumulative associations along lags are also predicted"
+  )
+```
+
+```{r}
+plot(pred.temp, "contour",
+     ylab = "lag (days)",
+     xlab = "mean temperature (ºC)")
+```
+
+cold temperatures a day ago have a negative effect on growth
+very hot temperatures a week ago have a positive effect on growth
