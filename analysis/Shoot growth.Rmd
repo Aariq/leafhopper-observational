@@ -132,9 +132,7 @@ shoot.data5 <-
          temp_lag2 = lag(temp_mean, n = 2L),
          temp_lag3 = lag(temp_mean, n = 3L),
          temp_lag4 = lag(temp_mean, n = 4L),
-         temp_lag5 = lag(temp_mean, n = 5L),
-         temp_lag6 = lag(temp_mean, n = 6L),
-         temp_lag7 = lag(temp_mean, n = 7L))
+         temp_lag5 = lag(temp_mean, n = 5L))
 ```
 
 5. Remove outliers
@@ -249,46 +247,66 @@ temp_mat <-
   select(starts_with("temp")) %>% 
   as.matrix()
 
-myexp <- function(x) exp(x)
+
 temp_k <-
   crossbasis(
-  x = temp_mat,
+  x = temp_mat[ , 1:6],
   # lag = 5,
   argvar = list(fun = "poly", degree = 2),
-  # arglag = list(fun = "myexp"), #exponential decay??
-  arglag = list(fun = "poly", degree = 2),
-  # arglag = list(fun = "lin")
+  # arglag = list(fun = "poly", degree = 2),
+  arglag = list(fun = "cr", df = 6)
+  )
+
+temp_k_lin <-
+  crossbasis(
+    x = temp_mat[ , 1:6],
+    argvar = list(fun = "lin"),
+    arglag = list(fun = "cr", df = 6)
   )
 summary(temp_k)
+summary(temp_k_lin)
 ```
+
+## Fit full model 
+Full model with quadratic effect of lagged temp (penalized cubic spline kernal with 5 days lag and 6 df).
 
 ```{r}
 temp.lmer <-
   lmer(growth ~ temp_k + day_post + diameter + mean_day + (1|interharvest_id),
                    data = shootdf)
+```
 
+## Does random effect matter?
+
+```{r}
 temp.lm <-
   lm(growth ~ temp_k + day_post + diameter + mean_day,
                    data = shootdf)
-AICtab(temp.lmer, temp.lm)
+AICtab(temp.lmer, temp.lm, temp.lmer.lin)
 ```
+Yes, keep the random effect
+
+## Does mean date matter?
 
 ```{r}
 temp.lmer2 <-
   lmer(growth ~ temp_k + day_post + diameter  + (1|interharvest_id),
                    data = shootdf)
+AICtab(temp.lmer, temp.lmer2)
+```
+No, drop it.
+
+## Which fits better, quadratic or linear?
+
+```{r}
 temp.lmer3 <-
-  lmer(growth ~ temp_k  + diameter + mean_day + (1|interharvest_id),
+  lmer(growth ~ temp_k_lin + day_post + diameter  + (1|interharvest_id),
                    data = shootdf)
 
 
 AICtab(temp.lmer, temp.lmer2, temp.lmer3)
-
-temp.lmer4 <- 
-  lmer(growth ~ temp_k + day_post + (1|interharvest_id),
-                   data = shootdf)
-AICtab(temp.lmer2, temp.lmer4)
 ```
+Interesting.  With the distributed lag model, the quadratic effect model fits better.
 
 ```{r}
 summary(temp.lmer2)
@@ -311,5 +329,11 @@ plot(pred.temp, "contour",
      xlab = "mean temperature (ºC)")
 ```
 
-cold temperatures a day ago have a negative effect on growth
-very hot temperatures a week ago have a positive effect on growth
+- cold temperatures a day ago have a negative effect on growth
+- warm temperatures about a day ago have a positive effect on growth
+- extreme temperatures about 5 days ago have a positive effect on growth (???). Likely spurrious.
+
+
+# Conclusion
+
+There is a significant effect of temperature on tea shoot growth.  A distributed lag model shows the same thing, and is not really conceptually necessary for this analysis.  I should probably only report the results of the LMER model.
