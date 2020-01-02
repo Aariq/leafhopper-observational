@@ -278,14 +278,19 @@ shoot.data4 <- shoot.data3 %>% filter(interharvest_id != "B1")
 ```{r}
 shoot.data5 <-
   shoot.data4 %>%
-  select(date, shoot_id, growth, diameter, temp_mean, day_post, mean_day, interharvest_id) %>% 
+  select(date, shoot_id, growth, diameter, temp_mean, precip_mm, day_post, mean_day, interharvest_id) %>% 
   group_by(shoot_id) %>% 
   arrange(date) %>% 
   mutate(temp_lag1 = lag(temp_mean),
          temp_lag2 = lag(temp_mean, n = 2L),
          temp_lag3 = lag(temp_mean, n = 3L),
          temp_lag4 = lag(temp_mean, n = 4L),
-         temp_lag5 = lag(temp_mean, n = 5L))
+         temp_lag5 = lag(temp_mean, n = 5L)) %>% 
+  mutate(precip_lag1 = lag(precip_mm, n = 1L),
+         precip_lag2 = lag(precip_mm, n = 2L),
+         precip_lag3 = lag(precip_mm, n = 3L),
+         precip_lag4 = lag(precip_mm, n = 4L),
+         precip_lag5 = lag(precip_mm, n = 5L))
 ```
 
 5. Remove outliers
@@ -302,7 +307,8 @@ shoot.data7 <-
   filter(!is.na(growth)) %>% 
   filter(!is.na(diameter))
 
-shootdf <- shoot.data7
+shootdf <- shoot.data7 %>%
+  select(date, shoot_id, interharvest_id, growth, diameter, day_post, mean_day, starts_with("temp"), starts_with("precip"))
 ```
 
 
