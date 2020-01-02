@@ -242,8 +242,71 @@ shoot_data_full <-
 shoot_data_full
 ```
 
+## Pre-treatment
+1. Create variable for # days post harvest and variable for start date.
+
+```{r}
+shoot.data2 <-
+  shoot_data_full %>%
+  group_by(shoot_id) %>% 
+  mutate(day_post = day - min(day, na.rm = TRUE),
+         start = min(day, na.rm = TRUE),
+         mean_day = mean(day, na.rm = TRUE)) %>%
+  ungroup()
+
+# shoot.data3 %>% filter(day_post ==0) %>% group_by(field) %>% count(interharvest.no)
+```
+
+3. create unique IDs for plant and interharvest number nested within field
+
+```{r}
+shoot.data3 <-
+  shoot.data2 %>% 
+  mutate(plant_id = paste0(field, plant),
+         interharvest_id = paste0(field, interharvest.no)) 
+```
+
+4. Remove first interharvest period for field B.  It was only 4 days, so I think data collection started in the middle of an interharvest period, making `day_post` unreliable as a co-variate for this replicate.
+
+```{r}
+shoot.data4 <- shoot.data3 %>% filter(interharvest_id != "B1")
+```
+
+
+6. Create lagged temperature variables
+
+```{r}
+shoot.data5 <-
+  shoot.data4 %>%
+  select(date, shoot_id, growth, diameter, temp_mean, day_post, mean_day, interharvest_id) %>% 
+  group_by(shoot_id) %>% 
+  arrange(date) %>% 
+  mutate(temp_lag1 = lag(temp_mean),
+         temp_lag2 = lag(temp_mean, n = 2L),
+         temp_lag3 = lag(temp_mean, n = 3L),
+         temp_lag4 = lag(temp_mean, n = 4L),
+         temp_lag5 = lag(temp_mean, n = 5L))
+```
+
+5. Remove outliers
+```{r}
+shoot.data6 <-
+  shoot.data5 %>%
+  filter(is.na(growth) | !growth > 5 & !growth < -5) 
+```
+
+7. Remove NAs
+```{r}
+shoot.data7 <- 
+  shoot.data6 %>% 
+  filter(!is.na(growth)) %>% 
+  filter(!is.na(diameter))
+
+shootdf <- shoot.data7
+```
+
 
 ### Export shoot growth data
 ```{r}
-write_rds(shoot_data_full, here("data", "cleaned", "shoots.rds"))
+write_rds(shootdf, here("data", "cleaned", "shoots.rds"))
 ```
