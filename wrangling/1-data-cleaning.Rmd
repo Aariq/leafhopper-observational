@@ -268,3 +268,26 @@ rain_gauge <-
 write_rds(rain_gauge, here("data", "cleaned", "rain-gauge.rds"))
 ```
 
+
+Can I use CAAS precip data?
+
+```{r}
+CAAS_precip <- 
+  CAASweather.tidy %>%
+  #I'm not actually sure if this is what the "0.1mm" means
+  mutate(precip_caas = precip_caas_0.1mm*10) %>%  
+  select(date, precip_caas)
+
+full_join(
+  rain_gauge,
+  CAAS_precip
+) %>% 
+  pivot_longer(-date, names_to = "source", values_to = "precip") %>% 
+  filter(year(date) == 2017) %>% 
+  ggplot(aes(x = date, y = precip, color = source)) +
+  geom_line() +
+  geom_point(size = 1) +
+  theme_bw()
+```
+
+Actually, now that I've correctly lagged the rain guage data, it seems kinda close (although not sure if I should multiply by 10 or not.)
