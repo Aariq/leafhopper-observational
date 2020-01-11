@@ -252,12 +252,16 @@ write_rds(CAASweather.tidy, here("data", "cleaned", "weather-caas.rds"))
 ```
 
 # Rain gauge data
-
+I emptied the rain guage in the morning, so it's actually the previous day's rain.
 ```{r}
 rain_gauge <-
   read_csv(here("data", "rainfall.csv")) %>% 
   mutate(date = paste(Date, "/2017") %>% mdy()) %>% 
-  select(date, precip_mm = "height (mm)")
+  select(date, precip_mm = "height (mm)") %>% 
+  add_row(date = ymd("2017-06-20"), precip_mm = NA) %>% 
+  arrange(date) %>% 
+  mutate(precip_mm = lead(precip_mm)) %>% 
+  filter(!is.na(precip_mm))
 ```
 
 ```{r}
