@@ -234,15 +234,18 @@ fix date column, rename columns
 ```{r}
 CAASweather.tidy <-
   CAASweather %>%
+  #I *think* this is what the column header means
+  mutate(precip_caas_mm = rainfall_0_1_mm * 10) %>% 
+  select(-rainfall_0_1_mm) %>% 
   rename(
     temp_mean_caas = mean_temperature_o_c,
     temp_max_caas = highest_tem,
     temp_min_caas = lowest_tem,
-    precip_caas_0.1mm = rainfall_0_1_mm,
     sun_hrs = shinetime_h,
     rh = relative_humidity_percent
   ) %>% 
   mutate(date = as_date(date))
+# anyNA(CAASweather.tidy)
 ```
 
 export
@@ -252,7 +255,9 @@ write_rds(CAASweather.tidy, here("data", "cleaned", "weather-caas.rds"))
 ```
 
 # Rain gauge data
-I emptied the rain guage in the morning, so it's actually the previous day's rain.
+
+I measured and emptied the rain guage in the morning, so it's actually the previous day's rain.
+
 ```{r}
 rain_gauge <-
   read_csv(here("data", "rainfall.csv")) %>% 
@@ -269,25 +274,52 @@ write_rds(rain_gauge, here("data", "cleaned", "rain-gauge.rds"))
 ```
 
 
-Can I use CAAS precip data?
+# Checking data reliability
+So, I only have HOBO temp data starting the first day of the experiment and only have rain gauge data from a small part of the experiment.  I'd like to fill in the gaps with other data sources so I can use lagged data variables.  But I want to check here if that's a legit thing to do.
+
+
+## Can I use CAAS precip data?
 
 ```{r}
 CAAS_precip <- 
   CAASweather.tidy %>%
-  #I'm not actually sure if this is what the "0.1mm" means
-  mutate(precip_caas = precip_caas_0.1mm*10) %>%  
-  select(date, precip_caas)
+  select(date, precip_caas_mm)
 
-full_join(
+precip_compare <- full_join(
   rain_gauge,
   CAAS_precip
-) %>% 
+) 
+
+precip_compare %>% 
   pivot_longer(-date, names_to = "source", values_to = "precip") %>% 
   filter(year(date) == 2017) %>% 
-  ggplot(aes(x = date, y = precip, color = source)) +
+ggplot(aes(x = date, y = precip, color = source)) +
   geom_line() +
   geom_point(size = 1) +
   theme_bw()
 ```
 
 Actually, now that I've correctly lagged the rain guage data, it seems kinda close (although not sure if I should multiply by 10 or not.)
+
+```{r}
+test <- precip_compare %>% 
+  filter(!is.na(precip_mm))
+cor.test(test$precip_mm, test$precip_caas_mm)
+```
+
+OK, that's good.  I'll use it!
+
+## Can I use CAAS temperature data?
+
+```{r}
+full_join(daily.temps, CAASweather.tidy) %>%
+  arrange(date) %>% 
+  filter(year(date) == 2017) %>% 
+  ggplot(aes(x = date)) +
+  geom_line(aes(y = temp_mean_caas), color = "blue") +
+  geom_point(aes(y = temp_mean_caas), color = "blue") +
+  geom_line(aes(y = temp_mean), color = "red") +
+  geom_point(aes(y = temp_mean), color = "red")
+```
+
+Oh, yeah, this is fine.  No correlation test needed. But unfortunately it's only 2 days of extra data.
