@@ -234,15 +234,13 @@ fix date column, rename columns
 ```{r}
 CAASweather.tidy <-
   CAASweather %>%
-  #I *think* this is what the column header means
-  mutate(precip_caas_mm = rainfall_0_1_mm * 10) %>% 
-  select(-rainfall_0_1_mm) %>% 
   rename(
     temp_mean_caas = mean_temperature_o_c,
     temp_max_caas = highest_tem,
     temp_min_caas = lowest_tem,
     sun_hrs = shinetime_h,
-    rh = relative_humidity_percent
+    rh = relative_humidity_percent,
+    precip_caas_mm = rainfall_0_1_mm
   ) %>% 
   mutate(date = as_date(date))
 # anyNA(CAASweather.tidy)
