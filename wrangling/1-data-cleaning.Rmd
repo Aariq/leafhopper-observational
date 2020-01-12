@@ -307,7 +307,7 @@ test <- precip_compare %>%
 cor.test(test$precip_mm, test$precip_caas_mm)
 ```
 
-OK, that's good.  I'll use it!
+OK, that's good.  I'll use it!  But becasue the scale seems kinda different, I should just use only the CAAS numbers. I think.
 
 ## Can I use CAAS temperature data?
 

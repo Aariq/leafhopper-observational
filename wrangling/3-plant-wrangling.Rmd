@@ -219,14 +219,20 @@ temperature <-
     select(-ends_with("caas"))
 ```
 
-Now I'll do the same for the precip data
+~~Now I'll do the same for the precip data~~
+
+I'll just use the CAAS weather station precip data.  It's correlated to the rain gauge data, but covers a longer time span.  It seems like all the CAAS precip data is higher than the rain gauge, so I'll just use it instead of prepending the rain gauge data.
 
 ```{r}
+# precip <-
+#   full_join(caas_sub, rain_gauge) %>% 
+#   mutate(precip_mm = ifelse(is.na(precip_mm), precip_caas_mm, precip_mm)) %>% 
+#   arrange(date) %>% 
+#   select(date, precip_mm)
 precip <-
-  full_join(caas_sub, rain_gauge) %>% 
-  mutate(precip_mm = ifelse(is.na(precip_mm), precip_caas_mm, precip_mm)) %>% 
-  arrange(date) %>% 
-  select(date, precip_mm)
+  caas_sub %>% 
+  select(date, "precip_mm" = precip_caas_mm) %>% 
+  arrange(date)
 ```
 
 join modified weather data now

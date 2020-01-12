@@ -203,7 +203,6 @@ growth.lm10 <-
                    data = shootdf)
 
 ICtab(growth.lm7, growth.lm8, growth.lm9, growth.lm10)
-
 ```
 
 Ok, wow, there really is an interaction and a quadratic effect??
