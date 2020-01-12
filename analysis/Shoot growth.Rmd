@@ -11,6 +11,8 @@ output:
     number_sections: yes
 ---
 
+TODO: The distributed lag models really need **penalized** splines, which I guess aren't done automatically with "cr"
+
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
@@ -94,7 +96,7 @@ Growth has a really leptokurtic distribution. Also, negative growth shouldn't ha
 ```{r}
 shootdf <-
   shootdf %>% 
-  mutate(growth_trunc = ifelse(growth <= 0, 0.001, growth)
+  mutate(growth_trunc = ifelse(growth <= 0, 0.001, growth))
          
 hist(shootdf$growth_trunc)
 
@@ -115,70 +117,125 @@ plot(growth_trunc)
 ```
 Not better!  Plus now it's zero-inflated.  I'll stick with the gaussian.
 
-# Analysis for effect of temperature on daily growth rate
+# Analysis for effect of temperature and precip on daily growth rate
 
 ## Start with full model
 
 ```{r}
-temp.lmer <-
-  lmer(growth ~ temp_lag1 + I(temp_lag1^2)+ day_post + diameter + (1|interharvest_id),
+growth.lmer <-
+  lmer(growth ~ poly(temp_lag1, 2, raw = TRUE)*poly(precip_lag1, 2, raw = TRUE) + day_post + diameter + (1|interharvest_id),
        data = shootdf)
 ```
 
 ## Does random effect matter?
 
 ```{r}
-temp.lm <-
-  lm(growth ~ temp_lag1 + I(temp_lag1^2) + day_post + diameter,
+growth.lm <-
+  lm(growth ~ poly(temp_lag1, 2, raw = TRUE)*poly(precip_lag1, 2, raw = TRUE) + day_post + diameter,
                    data = shootdf)
-# lmtest::lrtest(temp.lmer, temp.lm)
-ICtab(temp.lm, temp.lmer)
+ICtab(growth.lm, growth.lmer)
 ```
-Yes, random effect does matter.
-Winner = temp.lmer
+No, random effect doesn't matter.  Winner is growth.lm
 
-
-## Which fits better, qudratic or linear?
-```{r}
-temp.lmer2 <-
-  lmer(growth ~ temp_lag1 + day_post + diameter + (1|interharvest_id),
-                   data = shootdf)
-temp.lmer2.a <-
-  lmer(growth ~ -1 + temp_lag1 + day_post + diameter + (1|interharvest_id),
-                   data = shootdf)
-# lmtest::lrtest(temp.lmer2, temp.lmer3)
-ICtab(temp.lm, temp.lmer, temp.lmer2)
-```
-Linear fits better
-winner = temp.lmer2
+## Do co-variates matter?
 
 ```{r}
-summary(temp.lmer2.a)
-Anova(temp.lmer2)
-ranef(temp.lmer2)
+growth.lm2 <-
+  lm(growth ~ poly(temp_lag1, 2, raw = TRUE)*poly(precip_lag1, 2, raw = TRUE) + day_post,
+                   data = shootdf)
+growth.lm3 <-
+  lm(growth ~ poly(temp_lag1, 2, raw = TRUE)*poly(precip_lag1, 2, raw = TRUE)  + diameter,
+                   data = shootdf)
+ICtab(growth.lm, growth.lm2, growth.lm3)
+```
+Yes, keep both co-variates
+
+## Which fits better, quadratic or linear?
+
+```{r}
+growth.lm4 <-
+  lm(growth ~ temp_lag1 * poly(precip_lag1, 2, raw = TRUE) + day_post + diameter,
+                   data = shootdf)
+growth.lm5 <-
+  lm(growth ~ poly(temp_lag1, 2, raw = TRUE) * precip_lag1 + day_post + diameter,
+                   data = shootdf)
+growth.lm6 <-
+  lm(growth ~ temp_lag1 * precip_lag1 + day_post + diameter,
+                   data = shootdf)
+ICtab(growth.lm, growth.lm4, growth.lm5, growth.lm6)
 ```
 
-- linear growth declines slighly after harvest
-- fatter shoots grow faster
-- Significant linear effect of temperature on growth
-- Field A's second harvest had the highest growth and field B's third harvest had the lowest growth.
+Both quadratic fits best
+
+## Is there an interaction?
+
+```{r}
+growth.lm7 <-
+  lm(growth ~ poly(temp_lag1, 2, raw = TRUE) + poly(precip_lag1, 2, raw = TRUE) + day_post + diameter,
+                   data = shootdf)
+ICtab(growth.lm, growth.lm7)
+```
+Yes.
+
+```{r}
+growth.lm.a <-
+  lm(growth ~ -1 +poly(temp_lag1, 2, raw = TRUE)*poly(precip_lag1, 2, raw = TRUE) + day_post + diameter,
+                   data = shootdf)
+summary(growth.lm.a)
+
+Anova(growth.lm)
+```
+
+
+Hoo boy, this is not easy to interpret.  I think the interaction was a bad idea.
+
+```{r}
+growth.lm8 <-
+  lm(growth ~ temp_lag1 + poly(precip_lag1, 2, raw = TRUE) + day_post + diameter,
+                   data = shootdf)
+
+growth.lm9 <-
+  lm(growth ~ poly(temp_lag1, 2, raw = TRUE) + precip_lag1 + day_post + diameter,
+                   data = shootdf)
+
+growth.lm10 <-
+  lm(growth ~ temp_lag1 + precip_lag1 + day_post + diameter,
+                   data = shootdf)
+
+ICtab(growth.lm7, growth.lm8, growth.lm9, growth.lm10)
+
+```
+
+Ok, wow, there really is an interaction and a quadratic effect??
+
 
 ## Look at fitted values
 I'm not sure how to get a confidence interval for the fitted line.  The SE provided by `Effect()` seems wrong.
 ```{r}
 library(effects) 
 
-ee <- Effect("temp_lag1", temp.lmer2) 
-# ee <- Effect("temp_k", temp_lag_lmer2) #doesn't work for distributed lag models
+ee.temp <- Effect("temp_lag1", growth.lm) 
 
 ggplot(shootdf) +
   geom_point(aes(x = temp_lag1, y = growth), alpha = 0.1) +
-  geom_line(data = as.data.frame(ee), aes(x = temp_lag1, y = fit)) +
-  # geom_ribbon(data = as.data.frame(ee), colour = NA, alpha = 0.1, aes(x = temp_lag1, ymin = lower, ymax = upper))
+  geom_line(data = as.data.frame(ee.temp), aes(x = temp_lag1, y = fit)) +
+  geom_ribbon(data = as.data.frame(ee.temp), colour = NA, alpha = 0.1, aes(x = temp_lag1, ymin = lower, ymax = upper)) +
 
   labs(x = "Mean temperature of previous day (ºC)",
+       y = "Shoot growth (cm)") +
+  theme_bw()
+```
+```{r}
+ee.precip <- Effect("precip_lag1", growth.lm) 
+
+ggplot(shootdf) +
+  geom_point(aes(x = precip_lag1, y = growth), alpha = 0.1) +
+  geom_line(data = as.data.frame(ee.precip), aes(x = precip_lag1, y = fit)) +
+
+  labs(x = "precip of previous day (mm)",
        y = "Shoot growth (cm)")
 ```
+
 
 
 
@@ -188,7 +245,7 @@ ggplot(shootdf) +
 library(dlnm)
 ```
 
-## Construct lagged temp variable
+## Construct lagged variables
 
 Because or the complex design, I need to supply `crossbasis` with a matrix of pre-constructed lagged temperature variables. 
 
@@ -221,159 +278,19 @@ summary(temp_k)
 summary(temp_k_lin)
 ```
 
-## Fit full model 
-Full model with quadratic effect of lagged temp (penalized cubic spline kernal with 5 days lag and 6 df).
-
-```{r}
-temp_lag_lmer <-
-  lmer(growth ~ temp_k + day_post + diameter + (1|interharvest_id),
-                   data = shootdf)
-```
-
-## Does random effect matter?
-
-```{r}
-temp_lag_lm <-
-  lm(growth ~ temp_k + day_post + diameter,
-                   data = shootdf)
-# lmtest::lrtest(temp_lag_lmer, temp_lag_lm)
-AICtab(temp_lag_lmer, temp_lag_lm)
-```
-Yes, keep the random effect
 
 
-## Which fits better, quadratic or linear?
 
-```{r}
-temp_lag_lmer2 <-
-  lmer(growth ~ temp_k_lin + day_post + diameter  + (1|interharvest_id),
-                   data = shootdf)
-
-AICtab(temp_lag_lmer, temp_lag_lmer2)
-
-temp_lag_lmer.a <-
-  lmer(growth ~ -1 + temp_k + day_post + diameter  + (1|interharvest_id),
-                   data = shootdf)
-```
-Interesting.  With the distributed lag model, the quadratic effect model fits better.
-
-```{r}
-summary(temp_lag_lmer.a)
-Anova(temp_lag_lmer)
-ranef(temp_lag_lmer)
-```
-
-```{r}
-pred.temp <- crosspred(
-  temp_k, #the lagged predictor variable
-  temp_lag_lmer, #the glm model
-  # at=0:20, #what values of PM10 to evaluate at
-  bylag=0.2, #how fine to increment the lag space.  Small number makes smoother
-  cumul=TRUE #"incremental cumulative associations along lags are also predicted"
-  )
-```
-
-```{r}
-plot(pred.temp, "contour",
-     ylab = "lag (days)",
-     xlab = "mean temperature (ºC)")
-```
-
-- cold temperatures a day ago have a negative effect on growth
-- warm temperatures about a day ago have a positive effect on growth
-- extreme temperatures about 5 days ago have a positive effect on growth (???). Likely spurrious.
-
-
-# Precipitation
-
-Repeat analysis but with precip. I only have precip on-site from a subset of dates because it took longer than expected for the rain gauge to ship.  I have precip data at a county level, but it doesn't match up with the rain gauge data, so I hesitate to use it.
-
-**TODO:**
-- Consider using precip anomaly (difference from mean) as a way of scaling.
-
-```{r}
-shootdf
-```
-
-## Filter
-
-Remove NAs for precipitation
-
-```{r}
-precipdf <- 
-  shootdf %>% 
-  filter(!is.na(precip_lag5))
-```
-
-## Build full model
-
-```{r}
-precip_lmer <-
-  lmer(growth ~ precip_lag1 + I(precip_lag1^2) + day_post + diameter + (1|interharvest_id),
-                   data = precipdf)
-```
-
-## Does random effect matter?
-
-```{r}
-precip_lm <-
-  lm(growth ~ precip_lag1 + I(precip_lag1^2) + day_post + diameter,
-                   data = precipdf)
-
-ICtab(precip_lmer, precip_lm)
-```
-Yes, keep it.
-
-## Co-variates?
-
-```{r}
-#without diameter
-precip_lmer2 <-
-  lmer(growth ~ precip_lag1 + I(precip_lag1^2) + day_post + (1|interharvest_id),
-       data = precipdf)
-
-#without day_post
-precip_lmer3 <- 
-  lmer(growth ~ precip_lag1 + I(precip_lag1^2) + diameter + (1|interharvest_id),
-       data = precipdf)
-
-#with neither
-precip_lmer4 <- 
-  lmer(growth ~ precip_lag1 + I(precip_lag1^2) + (1|interharvest_id),
-       data = precipdf)
-
-ICtab(precip_lmer, precip_lmer2, precip_lmer3, precip_lmer4)
-```
-Only diameter matters as covariate.  Remember, this is a smaller subset of data because prcip data is limited.  not surprising there are differences in co-variates between temp and precip
-
-## Linear or quadratic effect of precip?
-
-```{r}
-precip_lmer5 <-
-  lmer(growth ~ precip_lag1 + diameter + (1|interharvest_id),
-                   data = precipdf)
-ICtab(precip_lmer3, precip_lmer5)
-```
-Linear fits better
-
-```{r}
-precip_lmer5.a <-
-  lmer(growth ~ -1 + precip_lag1 + diameter + (1|interharvest_id),
-                   data = precipdf)
-summary(precip_lmer5.a)
-Anova(precip_lmer5)
-```
-
-- no effect of precipitation
 
 # Distributed lag model for precip
 
 Because why not?
 
 ## Make lagged precip variable
+
 ```{r}
 precip_mat <-
-  precipdf %>%
+  shootdf %>%
   ungroup() %>%
   select(starts_with("precip")) %>% 
   as.matrix()
@@ -404,7 +321,7 @@ summary(precip_k_lin)
 ```{r}
 precip_lag_lmer <-
   lmer(growth ~ precip_k + day_post + diameter + (1|interharvest_id),
-                   data = precipdf)
+                   data = shootdf)
 ```
 
 ## Does random effect matter?
@@ -412,32 +329,32 @@ precip_lag_lmer <-
 ```{r}
 precip_lag_lm <-
   lm(growth ~ precip_k + day_post + diameter,
-                   data = precipdf)
+                   data = shootdf)
 
 ICtab(precip_lag_lmer, precip_lag_lm)
 ```
-No, random effect should be removed.
+Keep full model
 
 
 
 ## Linear or quadratic effect of precip?
 
 ```{r}
-precip_lag_lm2 <- 
-    lm(growth ~ precip_k_lin + day_post + diameter,
-                   data = precipdf)
-ICtab(precip_lag_lm, precip_lag_lm2)
+precip_lag_lmer2 <-
+  lmer(growth ~ precip_k_lin + day_post + diameter + (1|interharvest_id),
+                   data = shootdf)
+ICtab(precip_lag_lmer, precip_lag_lmer2)
 ```
 Quadratic fits better in this case.
 
 ```{r}
-summary(precip_lag_lm)
-Anova(precip_lag_lm)
+summary(precip_lag_lmer)
+Anova(precip_lag_lmer)
 ```
 ```{r}
 pred.precip <- crosspred(
   precip_k, #the lagged predictor variable
-  precip_lag_lm, #the glm model
+  precip_lag_lmer, #the glm model
   # at=0:20, #what values of PM10 to evaluate at
   bylag=0.2, #how fine to increment the lag space.  Small number makes smoother
   cumul=TRUE #"incremental cumulative associations along lags are also predicted"
@@ -449,13 +366,124 @@ plot(pred.precip, "contour",
      ylab = "lag (days)",
      xlab = "precipitation (mm)")
 ```
-- A little bit of rain (~ 25-100 mm) 0-2 days ago slightly improves growth.
-- A lot of rain on the day of measurement or the day before (0-1 days lag) reduces growth.
 
+Strongest effect of a 3 day lag.  Low rain is good for growth, too much rain bad for growth
 
+# Include both temp and precip in the same model
+
+```{r}
+w_lmer <- 
+    lmer(growth ~ precip_k + temp_k + day_post + diameter + (1|interharvest_id),
+         data = shootdf)
+```
+```{r}
+w_lm <-     
+  lm(growth ~ precip_k + temp_k + day_post + diameter,
+         data = shootdf)
+ICtab(w_lm, w_lmer)
+```
+
+Ok, now the random effect isn't significant
+
+Check co-variates
+```{r}
+w_lm2 <-     
+  lm(growth ~ precip_k + temp_k + day_post,
+         data = shootdf)
+
+w_lm3 <-     
+  lm(growth ~ precip_k + temp_k + diameter,
+         data = shootdf)
+
+w_lm4 <-     
+  lm(growth ~ precip_k + temp_k,
+         data = shootdf)
+
+ICtab(w_lm, w_lm2, w_lm3, w_lm4)
+```
+Co-variates all matter
+
+check main effects shape
+
+```{r}
+w_lm5 <-     
+  lm(growth ~ precip_k_lin + temp_k + day_post + diameter,
+         data = shootdf)
+
+w_lm6 <-     
+  lm(growth ~ precip_k + temp_k_lin + day_post + diameter,
+         data = shootdf)
+w_lm7 <-     
+  lm(growth ~ precip_k_lin + temp_k_lin + day_post + diameter,
+         data = shootdf)
+
+ICtab(w_lm, w_lm6, w_lm7)
+```
+Both quadratic
+
+Test for significance of main effects
+
+```{r}
+w_lm8 <-     
+  lm(growth ~ temp_k + day_post + diameter,
+         data = shootdf)
+
+w_lm9 <-     
+  lm(growth ~ precip_k + day_post + diameter,
+         data = shootdf)
+
+w_lm10 <-     
+  lm(growth ~ day_post + diameter,
+         data = shootdf)
+
+ICtab(w_lm, w_lm8, w_lm9, w_lm10)
+```
+
+Both significant
+
+is there an interaction?
+
+```{r}
+w_lm11 <-     
+  lm(growth ~ precip_k*temp_k + day_post + diameter,
+         data = shootdf)
+ICtab(w_lm, w_lm11)
+```
+ok, no.
+
+```{r}
+pred.temp <- crosspred(
+  temp_k, #the lagged predictor variable
+  w_lm, #the glm model
+  # at=0:20, #what values of PM10 to evaluate at
+  bylag=0.2, #how fine to increment the lag space.  Small number makes smoother
+  cumul=TRUE #"incremental cumulative associations along lags are also predicted"
+  )
+
+pred.precip <- crosspred(
+  precip_k, #the lagged predictor variable
+  w_lm, #the glm model
+  # at=0:20, #what values of PM10 to evaluate at
+  bylag=0.2, #how fine to increment the lag space.  Small number makes smoother
+  cumul=TRUE #"incremental cumulative associations along lags are also predicted"
+  )
+```
+
+```{r}
+plot(pred.temp, "contour",
+     ylab = "lag (days)",
+     xlab = "mean temperature (ºC)")
+```
+```{r}
+plot(pred.precip, "contour",
+     ylab = "lag (days)",
+     xlab = "precip (mm)")
+```
+
+When I account for temperature and precip in the same model, now high precip is good for plants.
 
 # Conclusion
 
 There is a significant effect of temperature on tea shoot growth.  A distributed lag model shows the same thing, and is not really conceptually necessary for this analysis.  I should probably only report the results of the LMER model.
 
-For precipitation, a 1-day lag has no effect on growth.  The distributed lag model is highly significant though showing a quadratic effect of prcip 2 days ago.
+For precipitation, a 1-day lag has no effect on growth.  The distributed lag model is highly significant though showing a quadratic effect of prcip 3 days ago.
