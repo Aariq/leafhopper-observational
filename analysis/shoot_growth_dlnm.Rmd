@@ -1,0 +1,272 @@
+---
+title: "Analysis Title"
+author: "Eric R. Scott"
+date: "Date Initiated"
+output: 
+  html_notebook: 
+    highlight: kate
+    theme: yeti
+    toc: yes
+    toc_float: yes
+    number_sections: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+*Last compiled: `r Sys.Date()`*
+
+```{r packages, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(lubridate)
+library(lme4)
+library(car)
+library(broom)
+library(plotly)
+library(here)
+library(conflicted)
+library(bbmle)
+library(lmtest)
+conflict_prefer("filter", "dplyr")
+conflict_prefer("here", "here")
+conflict_prefer("lag", "dplyr")
+```
+
+# Read in Data
+
+```{r}
+shootdf <- read_rds(here("data", "cleaned", "shoots.rds"))
+head(shootdf)
+```
+
+
+# Distributed Lag Model
+
+```{r}
+library(dlnm)
+library(mgcv)
+```
+
+## Construct lagged variables
+
+Because or the complex design, I need to supply `crossbasis` with a matrix of pre-constructed lagged temperature variables. 
+
+
+```{r}
+temp_mat <-
+  shootdf %>%
+  ungroup() %>%
+  select(starts_with("temp")) %>% 
+  as.matrix()
+
+precip_mat <-
+  shootdf %>%
+  ungroup() %>%
+  select(starts_with("precip")) %>% 
+  as.matrix()
+```
+
+Then I construct the cross-basis variable using a penalized cubic spline for the lag kernel and either a polynomial or linear relationship to the response variable.  For the cubic spline, I reduced the degrees of freedom to 6 because it was causing problems with `lmer` with the default.
+
+```{r}
+temp_k <-
+  crossbasis(
+  x = temp_mat[, 1:4],
+  argvar = list(fun = "poly", degree = 2),
+  arglag = list(fun = "cr")
+  )
+
+temp_k_lin <-
+  crossbasis(
+    x = temp_mat,
+    argvar = list(fun = "lin"),
+    arglag = list(fun = "cr")
+  )
+# summary(temp_k)
+# summary(temp_k_lin)
+
+
+precip_k <-
+  crossbasis(
+  x = precip_mat[,1:4],
+  argvar = list(fun = "poly", degree = 2),
+  arglag = list(fun = "cr")
+  )
+
+precip_k_lin <-
+  crossbasis(
+    x = precip_mat,
+    argvar = list(fun = "lin"),
+    arglag = list(fun = "cr")
+  )
+
+# summary(precip_k)
+```
+
+
+## default penalties
+```{r}
+temp_pen <- cbPen(temp_k)
+precip_pen <- cbPen(precip_k)
+
+temp_pen_lin <- cbPen(temp_k_lin)
+precip_pen_lin <- cbPen(precip_k_lin)
+```
+
+# Include both temp and precip in the same model
+
+```{r}
+w_gam <-
+  gam(growth ~ precip_k + temp_k + day_post + diameter,
+      data = shootdf,
+      paraPen = list(precip_k = precip_pen, temp_k = temp_pen),
+      gamma = 1.2)
+
+```
+
+Check co-variates
+```{r}
+w_gam2 <-
+  gam(growth ~ precip_k + temp_k + day_post,
+      data = shootdf,
+      paraPen = list(precip_k = precip_pen, temp_k = temp_pen),
+      gamma = 1.2)
+
+w_gam3 <-
+  gam(growth ~ precip_k + temp_k + diameter,
+      data = shootdf,
+      paraPen = list(precip_k = precip_pen, temp_k = temp_pen),
+      gamma = 1.2)
+
+w_gam4 <-
+  gam(growth ~ precip_k + temp_k,
+      data = shootdf,
+      paraPen = list(precip_k = precip_pen, temp_k = temp_pen),
+      gamma = 1.2)
+
+ICtab(w_gam, w_gam2, w_gam3, w_gam4)
+```
+Co-variates all matter
+
+check main effects shape
+
+```{r}
+w_gam5 <-
+  gam(growth ~ precip_k_lin + temp_k + day_post + diameter,
+      data = shootdf,
+      paraPen = list(precip_k_lin = precip_pen_lin, temp_k = temp_pen),
+      gamma = 1.2)
+
+w_gam6 <-
+  gam(growth ~ precip_k + temp_k_lin + day_post + diameter,
+      data = shootdf,
+      paraPen = list(precip_k = precip_pen, temp_k_lin = temp_pen_lin),
+      gamma = 1.2)
+
+w_gam7 <-
+  gam(growth ~ precip_k_lin + temp_k_lin + day_post + diameter,
+      data = shootdf,
+      paraPen = list(precip_k_lin = precip_pen_lin, temp_k_lin = temp_pen_lin),
+      gamma = 1.2)
+
+ICtab(w_gam, w_gam5, w_gam6, w_gam7)
+```
+Maybe precip should be linear.
+
+Test for significance of main effects
+
+```{r}
+w_gam8 <-
+  gam(growth ~temp_k + day_post + diameter,
+      data = shootdf,
+      paraPen = list(temp_k = temp_pen),
+      gamma = 1.2)
+
+w_gam9 <-
+  gam(growth ~ precip_k_lin + day_post + diameter,
+      data = shootdf,
+      paraPen = list(precip_k_lin = precip_pen_lin),
+      gamma = 1.2)
+
+w_lm10 <-
+  lm(growth ~ day_post + diameter,
+      data = shootdf)
+
+ICtab(w_gam5, w_gam8, w_gam9, w_lm10)
+```
+
+Winner:
+
+```{r}
+w_gam5
+```
+
+Both significant
+
+```{r}
+pred.temp <- crosspred(
+  temp_k, #the lagged predictor variable
+  w_gam5, #the glm model
+  cen = 24,
+  # at=0:20, #what values of PM10 to evaluate at
+  bylag=0.2, #how fine to increment the lag space.  Small number makes smoother
+  cumul=TRUE #"incremental cumulative associations along lags are also predicted"
+  )
+
+pred.precip <- crosspred(
+  precip_k_lin, #the lagged predictor variable
+  w_gam5, #the glm model
+  # at=0:20, #what values of PM10 to evaluate at
+  bylag=0.2, #how fine to increment the lag space.  Small number makes smoother
+  cumul=TRUE #"incremental cumulative associations along lags are also predicted"
+  )
+```
+
+```{r}
+plot(pred.temp, "contour",
+     ylab = "lag (days)",
+     xlab = "mean temperature (ºC)")
+```
+```{r}
+plot(pred.precip, "contour",
+     ylab = "lag (days)",
+     xlab = "precip (mm)")
+```
+
+When I account for temperature and precip in the same model, now high precip is good for plants.
+
+
+Look at coefs
+
+```{r}
+coef(w_gam5) %>%
+  enframe() %>% 
+  filter(str_starts(name, "temp_kv1")) %>% 
+  separate(name, c("label", "coef"), sep = "\\.l") %>% 
+  mutate(lag = seq(0, 5, length.out = n())) %>% 
+  ggplot(aes(x = lag, y = value)) +
+  geom_point() +
+  geom_line() +
+  ggtitle("Temperature coefs")
+
+summary(temp_k)
+```
+
+```{r}
+coef(w_gam5) %>%
+  enframe() %>% 
+  filter(str_starts(name, "precip_")) %>% 
+  separate(name, c("label", "coef"), sep = "\\.l") %>% 
+  mutate(lag = seq(0, 5, length.out = n())) %>% 
+  ggplot(aes(x = lag, y = value)) +
+  geom_point() +
+  geom_line() +
+  ggtitle("Precip coefs")
+```
+
+# Conclusion
+
+There is a significant effect of temperature on tea shoot growth.  A distributed lag model shows the same thing, and is not really conceptually necessary for this analysis.  I should probably only report the results of the LMER model.
+
+For precipitation, a 1-day lag has no effect on growth.  The distributed lag model is highly significant though showing a quadratic effect of prcip 3 days ago.
