@@ -40,7 +40,7 @@ caas <- read_rds(here("data", "cleaned", "weather-caas.rds"))
 rain_gauge <- read_rds(here("data", "cleaned", "rain-gauge.rds"))
 caas_sub <-
   caas %>% 
-    select(date, precip_caas_mm, temp_mean_caas, temp_max_caas, temp_min_caas) %>% 
+    select(date, precip_caas_mm, temp_mean_caas, temp_max_caas, temp_min_caas, sun_hrs, rh) %>% 
   filter(year(date) == 2017)
 ```
 
@@ -52,6 +52,7 @@ caas_sub <-
 
 
 Separate fields A and B
+
 ```{r, message=TRUE, warning=TRUE}
 input.A <- growth %>% filter(field == "A")
 input.B <- growth %>% filter(field == "B")
@@ -60,6 +61,7 @@ input.B <- growth %>% filter(field == "B")
 # Create inter-harvest periods
 
 Find harvest dates for both fields
+
 ```{r find harvest dates}
 #Find the harvest dates, i.e. the first date of each inter-harvest period.
 
@@ -83,6 +85,7 @@ harvest.dates.B <- add_row(harvest.dates.B, date = max(input.B$date) + days(1))
 ```
 
 Create harvest intervals.  Intervals are a data format from the `lubridate` package.  Because of the way I've coded harvesting, the last date of each inter-harvest interval is the harvest date - 1 day.
+
 ```{r create harvest intervals}
 harvest.int.A <- (lag(harvest.dates.A$date) - days(1)) %--% (harvest.dates.A$date - days(1))
 harvest.int.A <- harvest.int.A[-1]
@@ -95,6 +98,7 @@ harvest.int.B[1] <- min(input.B$date) %--% (harvest.dates.B$date[1] - days(1))
 ```
 
 Ok, now I create a column showing which interharvest period each datapoint belongs to labeled by harvest date and another column labeled by harvest number (1-4)
+
 ```{r assign intervals}
 data.A <-
   input.A %>%
@@ -216,7 +220,7 @@ temperature <-
          temp_max = ifelse(is.na(temp_max), temp_max_caas, temp_max),
          temp_min = ifelse(is.na(temp_min), temp_min_caas, temp_min)) %>% 
     arrange(date) %>% 
-    select(-ends_with("caas"))
+    select(-matches("caas"))
 ```
 
 ~~Now I'll do the same for the precip data~~
@@ -238,26 +242,32 @@ precip <-
 join modified weather data now
 
 ```{r}
-weather <- full_join(temperature, precip, by = "date")
-```
+weather <- full_join(temperature, precip, by = "date") %>% arrange(date)
 
+temp_lags <- map_dfc(1:7, ~lag(weather$temp_mean, .x)) %>% set_names(glue::glue("temp_lag{1:7}"))
+precip_lags <- map_dfc(1:7, ~lag(weather$precip_mm, .x)) %>% set_names(glue::glue("precip_lag{1:7}"))
+
+weather_lags <- bind_cols(weather, temp_lags, precip_lags) %>% 
+  select(date, starts_with("temp_"), starts_with("precip_"))
+```
 
 ## Add dates for all shoots and join
 
 ```{r}
 shoot_data_joined <-
-  full_join(shoot.data, weather, by = "date") %>% 
+  full_join(shoot.data, weather_lags, by = "date") %>% 
   arrange(date)
 
-prevweather<-
-  weather %>% 
-  filter(date < min(shoot.data$date)) 
-
-shoot_data_full <-
-  shoot_data_joined %>%
-  group_by(shoot_id) %>% 
-  group_modify(~bind_rows(., prevweather)) %>% 
-  arrange(shoot_id, date)
+# prevweather<-
+#   weather %>% 
+#   filter(date < min(shoot.data$date)) 
+# 
+# shoot_data_full <-
+#   shoot_data_joined %>%
+#   group_by(shoot_id) %>% 
+#   group_modify(~bind_rows(., prevweather)) %>% 
+#   arrange(shoot_id, date)
+shoot_data_full <- shoot_data_joined %>% select(-temp_max, -temp_min)
 ```
 
 ```{r}
@@ -298,21 +308,22 @@ shoot.data4 <- shoot.data3 %>% filter(interharvest_id != "B1")
 6. Create lagged temperature variables
 
 ```{r}
-shoot.data5 <-
-  shoot.data4 %>%
-  select(date, shoot_id, growth, diameter, temp_mean, precip_mm, day_post, mean_day, interharvest_id) %>% 
-  group_by(shoot_id) %>% 
-  arrange(date) %>% 
-  mutate(temp_lag1 = lag(temp_mean),
-         temp_lag2 = lag(temp_mean, n = 2L),
-         temp_lag3 = lag(temp_mean, n = 3L),
-         temp_lag4 = lag(temp_mean, n = 4L),
-         temp_lag5 = lag(temp_mean, n = 5L)) %>% 
-  mutate(precip_lag1 = lag(precip_mm, n = 1L),
-         precip_lag2 = lag(precip_mm, n = 2L),
-         precip_lag3 = lag(precip_mm, n = 3L),
-         precip_lag4 = lag(precip_mm, n = 4L),
-         precip_lag5 = lag(precip_mm, n = 5L))
+# shoot.data5 <-
+#   shoot.data4 %>%
+#   select(date, shoot_id, growth, diameter, temp_mean, precip_mm, day_post, mean_day, interharvest_id) %>% 
+#   group_by(shoot_id) %>% 
+#   arrange(date) %>% 
+#   mutate(temp_lag1 = lag(temp_mean),
+#          temp_lag2 = lag(temp_mean, n = 2L),
+#          temp_lag3 = lag(temp_mean, n = 3L),
+#          temp_lag4 = lag(temp_mean, n = 4L),
+#          temp_lag5 = lag(temp_mean, n = 5L)) %>% 
+#   mutate(precip_lag1 = lag(precip_mm, n = 1L),
+#          precip_lag2 = lag(precip_mm, n = 2L),
+#          precip_lag3 = lag(precip_mm, n = 3L),
+#          precip_lag4 = lag(precip_mm, n = 4L),
+#          precip_lag5 = lag(precip_mm, n = 5L))
+shoot.data5 <- shoot.data4
 ```
 
 5. Remove outliers
@@ -348,8 +359,16 @@ shootdf
 skimr::skim(shootdf %>% ungroup())
 ```
 
+# Export Data
 
-### Export shoot growth data
+## Export shoot growth data
 ```{r}
 write_rds(shootdf, here("data", "cleaned", "shoots.rds"))
 ```
+
+## Weather lag data
+
+```{r}
+write_rds(weather_lags, here("data", "cleaned", "weather_lags.rds"))
+```
+
