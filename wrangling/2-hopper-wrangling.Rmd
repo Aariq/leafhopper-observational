@@ -11,11 +11,6 @@ output:
     number_sections: yes
 ---
 
-#TODO:
-
-- lagged temperature and precip variables
-- add date from last harvest as co-variate
-
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
@@ -41,10 +36,7 @@ Create a dataframe for analyzing leafhopper density as a function of weather.
 ```{r}
 weather_lags <- read_rds(here("data", "cleaned", "weather_lags.rds"))
 hoppers <- read_rds(here("data", "cleaned", "hoppers.rds"))
-
 hourly.temps <- read_rds(here("data", "cleaned", "hourly-temps-hobo.rds"))
-
-
 ```
 
 # Join in weather data
@@ -110,7 +102,6 @@ harvest.int.B <- (lag(harvest.dates.B$date) - days(1)) %--% (harvest.dates.B$dat
 #the very first day of data collection was not immediately after a harvest.  Add that interval manually.
 
 harvest.int.B[1] <- min(harvest.dates$date) %--% (harvest.dates.B$date[1] - days(1))
-
 ```
 
 ### Add interharvest column
@@ -137,7 +128,6 @@ Also filter out the first interhavest period for field B because it's not immedi
 
 ```{r}
 #need to get interharvest periods.  Can't just borrow them from the plant data.
-
 hoppers6 <-
   hoppers5 %>%
   group_by(field, interharvest.no) %>% 
@@ -148,8 +138,6 @@ hoppers6 <-
   arrange(field, date) %>% 
   filter(!(field == "B" & interharvest.no == 1))
 ```
-
-
 
 # Write to file
 
