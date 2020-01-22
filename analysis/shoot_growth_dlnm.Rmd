@@ -11,6 +11,11 @@ output:
     number_sections: yes
 ---
 
+#TODO
+
+Consider adding penalty to lag.  The further back in time, the more likely the effects are to be spurrious for this analysis (in fact, you probably dont' need this fancy analysis for shoot growth).
+
+
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
@@ -72,14 +77,14 @@ Then I construct the cross-basis variable using a penalized cubic spline for the
 ```{r}
 temp_k <-
   crossbasis(
-  x = temp_mat[, 1:4],
+  x = temp_mat[, 1:6],
   argvar = list(fun = "poly", degree = 2),
   arglag = list(fun = "cr")
   )
 
 temp_k_lin <-
   crossbasis(
-    x = temp_mat,
+    x = temp_mat[, 1:6],
     argvar = list(fun = "lin"),
     arglag = list(fun = "cr")
   )
@@ -89,14 +94,14 @@ temp_k_lin <-
 
 precip_k <-
   crossbasis(
-  x = precip_mat[,1:4],
+  x = precip_mat[, 1:6],
   argvar = list(fun = "poly", degree = 2),
   arglag = list(fun = "cr")
   )
 
 precip_k_lin <-
   crossbasis(
-    x = precip_mat,
+    x = precip_mat[, 1:6],
     argvar = list(fun = "lin"),
     arglag = list(fun = "cr")
   )
@@ -118,11 +123,12 @@ precip_pen_lin <- cbPen(precip_k_lin)
 
 ```{r}
 w_gam <-
-  gam(growth ~ precip_k + temp_k + day_post + diameter,
+  gam(growth ~ temp_k + precip_k + day_post + diameter,
       data = shootdf,
       paraPen = list(precip_k = precip_pen, temp_k = temp_pen),
       gamma = 1.2)
-
+anova.gam(w_gam)
+# summary(w_gam)
 ```
 
 Check co-variates
@@ -199,7 +205,7 @@ ICtab(w_gam5, w_gam8, w_gam9, w_lm10)
 Winner:
 
 ```{r}
-w_gam5
+w_gam
 ```
 
 Both significant
@@ -207,16 +213,16 @@ Both significant
 ```{r}
 pred.temp <- crosspred(
   temp_k, #the lagged predictor variable
-  w_gam5, #the glm model
-  cen = 24,
+  w_gam, #the glm model
+  # cen = 24,
   # at=0:20, #what values of PM10 to evaluate at
   bylag=0.2, #how fine to increment the lag space.  Small number makes smoother
   cumul=TRUE #"incremental cumulative associations along lags are also predicted"
   )
 
 pred.precip <- crosspred(
-  precip_k_lin, #the lagged predictor variable
-  w_gam5, #the glm model
+  precip_k, #the lagged predictor variable
+  w_gam, #the glm model
   # at=0:20, #what values of PM10 to evaluate at
   bylag=0.2, #how fine to increment the lag space.  Small number makes smoother
   cumul=TRUE #"incremental cumulative associations along lags are also predicted"
@@ -234,13 +240,13 @@ plot(pred.precip, "contour",
      xlab = "precip (mm)")
 ```
 
-When I account for temperature and precip in the same model, now high precip is good for plants.
+
 
 
 Look at coefs
 
 ```{r}
-coef(w_gam5) %>%
+coef(w_gam) %>%
   enframe() %>% 
   filter(str_starts(name, "temp_kv1")) %>% 
   separate(name, c("label", "coef"), sep = "\\.l") %>% 
@@ -254,9 +260,9 @@ summary(temp_k)
 ```
 
 ```{r}
-coef(w_gam5) %>%
+coef(w_gam) %>%
   enframe() %>% 
-  filter(str_starts(name, "precip_")) %>% 
+  filter(str_starts(name, "precip_kv2")) %>% 
   separate(name, c("label", "coef"), sep = "\\.l") %>% 
   mutate(lag = seq(0, 5, length.out = n())) %>% 
   ggplot(aes(x = lag, y = value)) +
