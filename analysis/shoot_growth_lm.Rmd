@@ -204,6 +204,9 @@ growth.lm10 <-
 
 ICtab(growth.lm7, growth.lm8, growth.lm9, growth.lm10)
 ```
+```{r}
+Anova(growth.lm7)
+```
 
 Ok, wow, there really is an interaction and a quadratic effect??
 
