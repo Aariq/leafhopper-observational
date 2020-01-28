@@ -13,11 +13,8 @@ output:
 
 #TODO
 
-1. Consider adding additional penalty to lag.  The further back in time, the more likely the effects are to be spurrious for this analysis (in fact, you probably dont' need this fancy analysis for shoot growth).
-
-2. Rather than cutting off the lag at 5 days, you could only use plants for which you have 7 days of data.  Try this and see if it changes results.
-
 3. Include plant as a random effect rather than a fixed effect.  Probably will require use of `gamm4` package.
+Should be re-coded as just a number and nested inside `harvest_id`.  Like: `+ (1|harvest_id) + (harvest_id|plant)`, I think.
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
@@ -111,9 +108,9 @@ w_gam_int <-
           k = c(7, 7),
           xt = xt
           ) +
-        s(day_post) + s(diameter, k = 30) + field + plant,
+        s(day_post, bs = "cs") + s(diameter, bs = "cs", k = 20) + interharvest_id + plant,
       data = shootdf,
-      gamma = 1.2, #values above 1 make smoother.  Borrowed from Teller et al.
+      # gamma = 1.2, #values above 1 make smoother.  Borrowed from Teller et al.
       method = "REML")
 ```
 
@@ -123,7 +120,7 @@ w_gam_int <-
 gam.check(w_gam_int)
 ```
 
-GAM converges, diameter had low p-value for the basis dimension check, so increased k to 25
+GAM converges, diameter had low p-value for the basis dimension check, so increased k to 20
 
 ```{r}
 concurvity(w_gam_int, full = FALSE)
@@ -179,7 +176,7 @@ plot(pred_temp2,
      main = "Effect of Lag for 26ºC")
 ```
 
-Quadratic effect of temperature (max growth at about 26ºC) with a linear effect of lag, where temperatures 5 days ago best predict effects on growth (weird, do not understand this).
+
 
 ```{r}
 pred_precip <- crosspred("Q_precip", w_gam_int, cen = 63, by = 0.05)
