@@ -39,6 +39,7 @@ library(dlnm)
 conflict_prefer("filter", "dplyr")
 conflict_prefer("here", "here")
 conflict_prefer("lag", "dplyr")
+conflict_prefer("select", "dplyr")
 ```
 
 # Goal
@@ -110,9 +111,11 @@ w_gam_int <-
           ) +
         s(day_post, bs = "cs") + s(diameter, bs = "cs", k = 20) + interharvest_id + plant,
       data = shootdf,
-      # gamma = 1.2, #values above 1 make smoother.  Borrowed from Teller et al.
+      family = scat,
+      gamma = 1.2, #values above 1 make smoother.  Borrowed from Teller et al.
       method = "REML")
 ```
+
 
 ## Inspect the GAM
 
