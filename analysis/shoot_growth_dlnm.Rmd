@@ -97,6 +97,7 @@ xt <- list(bs = "cr", argvar = list(fun = "poly", degree = 2))
 ## Build the GAM
 
 ```{r}
+shootdf <- shootdf %>% mutate(plant = as.factor(plant), interharvest_id = as.factor(interharvest_id))
 w_gam_int <- 
   gam(growth ~
         s(Q_temp, L,
@@ -109,7 +110,8 @@ w_gam_int <-
           k = c(7, 7),
           xt = xt
           ) +
-        s(day_post, bs = "cs") + s(diameter, bs = "cs", k = 20) + interharvest_id + plant,
+        s(day_post, bs = "cs") + s(diameter, bs = "cs", k = 20) + #fixed effects
+        s(interharvest_id, bs = "re") + s(plant, bs = "re"), #random effects
       data = shootdf,
       family = scat,
       gamma = 1.2, #values above 1 make smoother.  Borrowed from Teller et al.

@@ -282,12 +282,26 @@
       "Repository": "CRAN",
       "Hash": "c426258a806b7e69613432b197b9954d"
     },
+    "effects": {
+      "Package": "effects",
+      "Version": "4.1-4",
+      "Source": "Repository",
+      "Repository": "CRAN",
+      "Hash": "0f9263a4ac2467adc445fecacf4f693b"
+    },
     "ellipsis": {
       "Package": "ellipsis",
       "Version": "0.3.0",
       "Source": "Repository",
       "Repository": "CRAN",
       "Hash": "7067d90c1c780bfe80c0d497e3d7b49d"
+    },
+    "estimability": {
+      "Package": "estimability",
+      "Version": "1.3",
+      "Source": "Repository",
+      "Repository": "CRAN",
+      "Hash": "05901bd61be60fd3bfc5b7d7c3517d1d"
     },
     "evaluate": {
       "Package": "evaluate",
@@ -576,6 +590,13 @@
       "Repository": "CRAN",
       "Hash": "eaee7d2a6f3ed4491df868611cb064cc"
     },
+    "mitools": {
+      "Package": "mitools",
+      "Version": "2.4",
+      "Source": "Repository",
+      "Repository": "CRAN",
+      "Hash": "a4b659bd0528226724d55034f11ed7cb"
+    },
     "modelr": {
       "Package": "modelr",
       "Version": "0.1.5",
@@ -751,6 +772,13 @@
       "Repository": "CRAN",
       "Hash": "5181d5f316c7a6589219866d640e004c"
     },
+    "repr": {
+      "Package": "repr",
+      "Version": "1.0.1",
+      "Source": "Repository",
+      "Repository": "CRAN",
+      "Hash": "5a3364170eec6a4e4e0ce0ccac113159"
+    },
     "reprex": {
       "Package": "reprex",
       "Version": "0.3.0",
@@ -835,6 +863,13 @@
       "Repository": "CRAN",
       "Hash": "6ca23724bb2c804c1d0b3db4862a39c7"
     },
+    "skimr": {
+      "Package": "skimr",
+      "Version": "2.0.2",
+      "Source": "Repository",
+      "Repository": "CRAN",
+      "Hash": "32a89b5be66c66cd554e553913b1abc5"
+    },
     "snakecase": {
       "Package": "snakecase",
       "Version": "0.11.0",
@@ -869,6 +904,13 @@
       "Source": "Repository",
       "Repository": "CRAN",
       "Hash": "0759e6b6c0957edb1311028a49a35e76"
+    },
+    "survey": {
+      "Package": "survey",
+      "Version": "3.36",
+      "Source": "Repository",
+      "Repository": "CRAN",
+      "Hash": "ccb3888173c57d80cb5f4c00f87d003d"
     },
     "survival": {
       "Package": "survival",
