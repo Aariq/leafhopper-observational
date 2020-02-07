@@ -1,0 +1,209 @@
+---
+title: "Analysis Title"
+author: "Eric R. Scott"
+date: "Date Initiated"
+output: 
+  html_notebook: 
+    highlight: kate
+    theme: yeti
+    toc: yes
+    toc_float: yes
+    number_sections: yes
+---
+#TODO
+left off at building the gam.  Looks maybe overdispersed or something.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+*Last compiled: `r Sys.Date()`*
+
+```{r packages, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(lubridate)
+library(lme4)
+library(car)
+library(broom)
+library(plotly)
+library(here)
+library(conflicted)
+library(bbmle)
+library(lmtest)
+library(mgcv)
+library(dlnm)
+
+conflict_prefer("filter", "dplyr")
+conflict_prefer("here", "here")
+conflict_prefer("lag", "dplyr")
+```
+
+# Goal
+
+This analysis is based on Gasparrini A, Scheipl F, Armstrong B, Kenward MG (2017) A penalized framework for distributed lag non-linear models. Biometrics 73:938–948. doi: 10.1111/biom.12645.  Specifically, it is based on `ex1_01.int.R` provided in their code.  This "internal" method for distributed lag models takes full(?) advantage of built in features of `gam`s.
+
+The goal is to model the effects of temperature and precipitation on plant growth as having a quadratic, lagged effect.  The lag is modeled as a penalized cubic regression spline and the effect of temperature as a 2nd order polynomial in a crossbasis smoother. In an ideal world, the penalized spline would be the shrinkage version (bs = "cs"), but that isn't available in the crossbasis smooth constructor provided by `dlnm`.
+
+# Read in Data
+
+```{r}
+hoppers <- read_rds(here("data", "cleaned", "hopper-weather.rds"))
+head(hoppers)
+hoppers <- hoppers %>% 
+  mutate(interharvest_id = as.factor(paste0(field, interharvest.no)),
+         counter = as.factor(counter)) %>% 
+  filter(!is.na(precip_lag7)) #get rid of plants that don't have 7 days of data
+```
+
+# Distributed Lag Model: "internal" method
+
+## Setup
+
+Create matrices for temperature, precip, and lag.
+
+```{r}
+temp_mat <-
+  hoppers %>% 
+  select(starts_with("temp"), -temp_at_count, -temp_max, -temp_min) %>% 
+  as.matrix()
+
+precip_mat <-
+  hoppers %>%
+  select(starts_with("precip")) %>% 
+  as.matrix()
+
+# Q_temp <- temp_mat[ , 1:6]
+Q_temp <- temp_mat #use all the data
+# L <- matrix(0:5, nrow(Q_temp), ncol(Q_temp), byrow = TRUE)
+
+L <- matrix(0:7, nrow(Q_temp), ncol(Q_temp), byrow = TRUE)
+
+# Q_precip <- precip_mat[ , 1:6]
+Q_precip <- precip_mat
+```
+
+
+Create options that override first dimension of smoother with a polynomial function instead.
+
+```{r}
+poly <- dlnm:::poly
+xt <- list(bs = "cr", argvar = list(fun = "poly", degree = 2))
+```
+
+
+## Build the GAM
+
+```{r}
+w_gam_int <- 
+  gam(hoppers ~
+        s(Q_temp, L,
+          bs = "cb",
+          k = c(7, 7),
+          xt = xt
+          ) +
+        s(Q_precip, L,
+          bs = "cb",
+          k = c(7, 7),
+          xt = xt
+          ) +
+        s(day_post, bs = "cs") + s(temp_at_count, bs = "cs") + interharvest_id +
+        s(counter, bs = "re"),
+      family = poisson(link = "log"),
+      offset = n_leaves,
+      data = hoppers,
+      # gamma = 1.2, #values above 1 make smoother.  Borrowed from Teller et al.
+      method = "REML")
+```
+
+## Inspect the GAM
+
+```{r}
+gam.check(w_gam_int)
+```
+
+GAM converges, diameter had low p-value for the basis dimension check, so increased k to 20
+
+```{r}
+concurvity(w_gam_int, full = FALSE)
+```
+
+Both precip and temperature have potential problems with concurvity
+
+Precip and temp are concurve(?) meaning they might be redundant in the model.  This makes sense as temperature and precip are generally correlated to some extent.
+
+## Significance test
+
+```{r}
+anova.gam(w_gam_int)
+summary(w_gam_int)$edf
+w_gam_int$sp
+```
+Significant effect of plant (parametric factor), temperature, precip, days post harvest, and diameter on growth.
+
+## Predictions and plots
+
+### Plot regular smooths
+
+```{r}
+plot(w_gam_int, pages = 1, residuals = FALSE)
+```
+Shoots with larger diameters grow faster.  This looks like it could be a linear term, even though the edf > 1.  Shoot growth rates vary through time in a more complex manner with the fastest growth happening about 10 days post harvest and the slowest growth around 25 days post harvest.  The uptick at the end must be spurrious.
+
+
+### Plot crossbasis smooths
+
+```{r}
+pred_temp <- crosspred("Q_temp", w_gam_int, cen = 22)
+pred_temp2 <- crosspred("Q_temp", w_gam_int, by = 0.2, bylag = 0.2, cen = 22)
+
+#3D
+plot(pred_temp,
+     ptype = "contour",
+     xlab = "Temperature (C)",
+     ylab = "lag (days)",
+     main = "Temperature")
+
+# Overall effect of temp
+plot(pred_temp2,
+     "overall",
+     ylab = "Relative Growth Rate",
+     xlab = "Temperature (C)",
+     main = "Temperature Effects")
+
+plot(pred_temp2,
+     var = 26,
+     xlab = "Lag (days)",
+     ylab = "Relative Growth Rate",
+     main = "Effect of Lag for 26ºC")
+```
+
+
+
+```{r}
+pred_precip <- crosspred("Q_precip", w_gam_int, cen = 63, by = 0.05)
+pred_precip2 <- crosspred("Q_precip", w_gam_int, by = 0.2, bylag = 0.2, cen = 63)
+
+#3D
+plot(pred_precip,
+     ptype = "contour",
+     xlab = "Precip (mm)",
+     ylab = "lag (days)",
+     main = "Precip")
+
+# Overall effect of temp
+plot(pred_precip2,
+     "overall",
+     ylab = "Relative Growth Rate",
+     xlab = "Precip (mm)",
+     main = "Precip")
+
+plot(pred_precip2,
+     var = 20,
+     xlab = "Lag (days)",
+     ylab = "Relative Growth Rate",
+     main = "Effect of Lag for 20 mm")
+```
+
+Strong positive effect of low precipitation 0-2 days ago. Negative effect of very high precip. This makes sense as low precip is probably associated with more sun and higher temperatures.
+
+# Conclusion
