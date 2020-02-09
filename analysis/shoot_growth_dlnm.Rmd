@@ -16,6 +16,8 @@ output:
 3. Include plant as a random effect rather than a fixed effect.  Probably will require use of `gamm4` package.
 Should be re-coded as just a number and nested inside `harvest_id`.  Like: `+ (1|harvest_id) + (harvest_id|plant)`, I think.
 
+include conversion to factors in wrangling, not in this doc.
+
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
