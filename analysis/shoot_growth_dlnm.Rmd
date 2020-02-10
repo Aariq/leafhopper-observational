@@ -57,7 +57,7 @@ shootdf <- read_rds(here("data", "cleaned", "shoots.rds"))
 head(shootdf)
 shootdf <- shootdf %>% 
   separate(shoot_id, into = c("field", "harvest", "plant", "shoot"), remove = FALSE, sep = "-") %>% 
-  filter(!is.na(precip_lag7)) #get rid of plants that don't have 7 days of data
+  filter(!is.na(precip_lag14)) #get rid of plants that don't have 7 days of data
 ```
 
 # Distributed Lag Model: "internal" method
@@ -81,7 +81,7 @@ precip_mat <-
 Q_temp <- temp_mat #use all the data
 # L <- matrix(0:5, nrow(Q_temp), ncol(Q_temp), byrow = TRUE)
 
-L <- matrix(0:7, nrow(Q_temp), ncol(Q_temp), byrow = TRUE)
+L <- matrix(0:(ncol(Q_temp) - 1), nrow(Q_temp), ncol(Q_temp), byrow = TRUE)
 
 # Q_precip <- precip_mat[ , 1:6]
 Q_precip <- precip_mat
@@ -104,22 +104,23 @@ w_gam_int <-
   gam(growth ~
         s(Q_temp, L,
           bs = "cb",
-          k = c(7, 7),
-          xt = xt
+          k = c(14, 14),
+          # xt = xt
+          xt = list(bs = "cr")
           ) +
-        s(Q_precip, L,
-          bs = "cb",
-          k = c(7, 7),
-          xt = xt
-          ) +
-        s(day_post, bs = "cs") + s(diameter, bs = "cs", k = 20) + #fixed effects
+        # s(Q_precip, L,
+        #   bs = "cb",
+        #   k = c(7, 7),
+        #   xt = xt
+        #   ) +
+        s(day_post, bs = "cs", k = 15) + s(diameter, bs = "cs") + #fixed effects
         s(interharvest_id, bs = "re") + s(plant, bs = "re"), #random effects
       data = shootdf,
       family = scat,
       gamma = 1.2, #values above 1 make smoother.  Borrowed from Teller et al.
       method = "REML")
 ```
-
+ 
 
 ## Inspect the GAM
 
@@ -127,7 +128,7 @@ w_gam_int <-
 gam.check(w_gam_int)
 ```
 
-GAM converges, diameter had low p-value for the basis dimension check, so increased k to 20
+GAM converges, day_post had low p-value for the basis dimension check, so increased k to 15, but stopped there because it didn't increase edf at all.
 
 ```{r}
 concurvity(w_gam_int, full = FALSE)
