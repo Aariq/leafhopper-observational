@@ -18,6 +18,10 @@ Should be re-coded as just a number and nested inside `harvest_id`.  Like: `+ (1
 
 include conversion to factors in wrangling, not in this doc.
 
+**Do i need to include time (date) as a smooth term?  To control for temporal autocorrelation?  Look in Gasparrini again**
+
+Do separate models for temp and precip and compare with qAIC to see which one is best.
+
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
@@ -101,18 +105,19 @@ xt <- list(bs = "cr", argvar = list(fun = "poly", degree = 2))
 ```{r}
 shootdf <- shootdf %>% mutate(plant = as.factor(plant), interharvest_id = as.factor(interharvest_id))
 w_gam_int <- 
-  gam(growth ~
-        s(Q_temp, L,
+  gam(growth ~ 
+        # s(Q_temp, L,
+        #   bs = "cb",
+        #   k = c(14, 14),
+        #   # xt = xt
+        #   xt = list(bs = "cr")
+        #   ) +
+        s(Q_precip, L,
           bs = "cb",
           k = c(14, 14),
           # xt = xt
           xt = list(bs = "cr")
           ) +
-        # s(Q_precip, L,
-        #   bs = "cb",
-        #   k = c(7, 7),
-        #   xt = xt
-        #   ) +
         s(day_post, bs = "cs", k = 15) + s(diameter, bs = "cs") + #fixed effects
         s(interharvest_id, bs = "re") + s(plant, bs = "re"), #random effects
       data = shootdf,
@@ -126,12 +131,13 @@ w_gam_int <-
 
 ```{r}
 gam.check(w_gam_int)
+summary(w_gam_int)
 ```
 
 GAM converges, day_post had low p-value for the basis dimension check, so increased k to 15, but stopped there because it didn't increase edf at all.
 
 ```{r}
-concurvity(w_gam_int, full = FALSE)
+concurvity(w_gam_int, full = TRUE)
 ```
 
 Both precip and temperature have potential problems with concurvity
@@ -145,7 +151,7 @@ anova.gam(w_gam_int)
 summary(w_gam_int)$edf
 w_gam_int$sp
 ```
-Significant effect of plant (parametric factor), temperature, precip, days post harvest, and diameter on growth.
+Significant effect of, temperature, precip, days post harvest, and diameter on growth.
 
 ## Predictions and plots
 
