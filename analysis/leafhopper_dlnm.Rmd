@@ -1,7 +1,7 @@
 ---
-title: "Analysis Title"
+title: "Leafhopper distributed lag model"
 author: "Eric R. Scott"
-date: "Date Initiated"
+date: "2020-01-25"
 output: 
   html_notebook: 
     highlight: kate
@@ -12,8 +12,10 @@ output:
 ---
 #TODO
 
-- Double-check gam.check() results.  Seems like there is some structure in the data.
-- Make sure you can use `counter` as random effect.
+- Tidy up analysis
+- export figures
+- make sure doing separate GAMs for temp and precip is legit
+
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
@@ -55,7 +57,8 @@ hoppers <- read_rds(here("data", "cleaned", "hopper-weather.rds"))
 
 hoppers <- hoppers %>% 
   mutate(interharvest_id = as.factor(paste0(field, interharvest.no)),
-         counter = as.factor(counter)) %>% 
+         counter = as.factor(counter),
+         plant = as.factor(plant)) %>% 
   filter(!is.na(precip_lag14)) #get rid of plants that don't have 14 days of data
 
 head(hoppers)
@@ -121,80 +124,90 @@ Dispersion is closer to 1, but model fails to converge.  Might not be a problem 
 Create matrices for temperature, precip, and lag.
 
 ```{r}
-temp_mat <-
+Q_temp <-
   hoppers %>% 
   select(starts_with("temp"), -temp_at_count, -temp_max, -temp_min) %>% 
   as.matrix()
 
-precip_mat <-
+Q_precip <-
   hoppers %>%
   select(starts_with("precip")) %>% 
   as.matrix()
 
-# Q_temp <- temp_mat[ , 1:6]
-Q_temp <- temp_mat #use all the data
-# L <- matrix(0:5, nrow(Q_temp), ncol(Q_temp), byrow = TRUE)
-
-L <- matrix(0:(ncol(temp_mat)-1), nrow(Q_temp), ncol(Q_temp), byrow = TRUE)
-
-# Q_precip <- precip_mat[ , 1:6]
-Q_precip <- precip_mat
-
+L <- matrix(0:(ncol(Q_temp)-1), nrow(Q_temp), ncol(Q_temp), byrow = TRUE)
 ```
 
-
-Create options that override first dimension of smoother with a polynomial function instead.
-
-```{r}
-poly <- dlnm:::poly
-xt <- list(bs = "cr", argvar = list(fun = "poly", degree = 2))
-```
-
-
-## Build the GAM
+# Build the GAMs
 
 Seems like if I use the offset it makes things *worse*.  Like, way overdispersed with poisson, but underdispersed with negbin.  Also, gam.check() just crashes if I use offset and family = nb at the same time
 
 ```{r}
-w_gam_int <- 
+m_temp <- 
   gam(hoppers ~
         s(Q_temp, L,
           bs = "cb",
           k = c(14, 14),
-          # xt = xt
           xt = list(bs = "cr")
         ) +
         # s(Q_precip, L,
         #   bs = "cb",
         #   k = c(14, 14),
-        #   # xt = xt
         #   xt = list(bs = "cr")
         # ) +
+        s(day, bs = "cs") +
         s(day_post, bs = "cs") +
         s(counter, bs = "re") + #no difference with random vs. fixed
-        # counter +
-        s(interharvest_id, bs = "re"),
-      # family = nb(link = "log"),
+        s(interharvest_id, bs = "re") +
+        s(plant, bs = "re"),
       family = poisson(),
       offset = log(n_leaves),
       data = hoppers,
-      # gamma = 1.2, #values above 1 make smoother.  Borrowed from Teller et al.
+      gamma = 1.2, #values above 1 make smoother.  Borrowed from Teller et al.
+      method = "REML")
+
+m_precip <- 
+  gam(hoppers ~
+        # s(Q_temp, L,
+        #   bs = "cb",
+        #   k = c(14, 14),
+        #   xt = list(bs = "cr")
+        # ) +
+        s(Q_precip, L,
+          bs = "cb",
+          k = c(14, 14),
+          xt = list(bs = "cr")
+        ) +
+        s(day, bs = "cs") +
+        s(day_post, bs = "cs") +
+        s(counter, bs = "re") + #no difference with random vs. fixed
+        s(interharvest_id, bs = "re") +
+        s(plant, bs = "re"),
+      family = poisson(),
+      offset = log(n_leaves),
+      data = hoppers,
+      gamma = 1.2, #values above 1 make smoother.  Borrowed from Teller et al.
       method = "REML")
 ```
+```{r}
+AIC(m_temp, m_precip)
+```
+
+AICs nearly identical!  Keep both models??
+
+# Temperature
 
 ## Inspect the GAM
 
 ```{r}
-gam.check(w_gam_int)
-# summary(w_gam_int)
-sum(residuals(w_gam_int, type = "pearson")^2) / df.residual(w_gam_int)
+gam.check(m_temp)
+sum(residuals(m_temp, type = "pearson")^2) / df.residual(m_temp)
 ```
 
-Slightly overdispersed, but not enough to use negbin, IMO
+not overdispersed
 
 ```{r}
-concurvity(w_gam_int, full = TRUE)
-# concurvity(w_gam_int, full = FALSE)
+concurvity(m_temp, full = TRUE)
+# concurvity(m_temp, full = FALSE)
 ```
 
 I'm a little bit confused how temperature and counter could have such high concurvity.  Might want to check for systematic changes in counter.  I guess wei ji peng wasn't there the entire time.  Maybe he was gone for the hottest week?? 
@@ -202,9 +215,7 @@ I'm a little bit confused how temperature and counter could have such high concu
 ## Significance test
 
 ```{r}
-anova.gam(w_gam_int)
-# summary(w_gam_int)$edf
-# w_gam_int$sp
+anova.gam(m_temp)
 ```
 Significant effect of plant (parametric factor), temperature, precip, days post harvest, and diameter on growth.
 
@@ -213,7 +224,7 @@ Significant effect of plant (parametric factor), temperature, precip, days post 
 ### Plot regular smooths
 
 ```{r}
-plot(w_gam_int, pages = 1, residuals = FALSE)
+plot(m_hopper, pages = 1, residuals = FALSE)
 ```
 
 
@@ -221,8 +232,8 @@ plot(w_gam_int, pages = 1, residuals = FALSE)
 ### Plot crossbasis smooths
 
 ```{r}
-pred_temp <- crosspred("Q_temp", w_gam_int)
-pred_temp2 <- crosspred("Q_temp", w_gam_int, by = 0.2, bylag = 0.2, cen = 28)
+pred_temp <- crosspred("Q_temp", m_temp)
+pred_temp2 <- crosspred("Q_temp", m_temp, by = 0.2, bylag = 0.2, cen = 28)
 
 #3D
 plot(pred_temp,
@@ -240,19 +251,30 @@ plot(pred_temp2,
      main = "Temperature Effects")
 
 plot(pred_temp2,
-     var = 26,
+     var = 21,
      xlab = "Lag (days)",
-     ylab = "Relative Growth Rate",
-     main = "Effect of Lag for 26ºC")
+     ylab = "Relative change in leafhoppers / leaf",
+     main = "Effect of Lag for 21ºC")
 ```
 
+Significant effect of lagged temperature, but not of date.  The further back, the greater the effect (means weather data doesnt' go far enough back to capture effect?).  Cool temperatures increase leafhopper density?!??!??!?!?!?!?!?!?!?!?
 
+# Precip
+```{r}
+gam.check(m_precip)
+```
 
 ```{r}
-pred_precip <- crosspred("Q_precip", w_gam_int, by = 0.05,
+anova.gam(m_precip)
+```
+
+significant effect of precip, but not of date.
+
+```{r}
+pred_precip <- crosspred("Q_precip", m_precip, by = 0.05,
                          # cen = 32
                          )
-pred_precip2 <- crosspred("Q_precip", w_gam_int, by = 0.2, bylag = 0.2, cen = 72)
+pred_precip2 <- crosspred("Q_precip", m_precip, by = 0.2, bylag = 0.2)
 
 #3D
 plot(pred_precip,
@@ -269,12 +291,21 @@ plot(pred_precip2,
      main = "Precip")
 
 plot(pred_precip2,
-     var = 30,
+     var = 0,
      xlab = "Lag (days)",
      ylab = "Relative Growth Rate",
-     main = "Effect of Lag for 30 mm")
+     main = "Effect of Lag for 0 mm")
+
+plot(pred_precip2,
+     var = 80,
+     xlab = "Lag (days)",
+     ylab = "Relative Growth Rate",
+     main = "Effect of Lag for 80 mm")
+#CI overlaps 1 for entire range
 ```
 
+Low precip at 5 and 11 days ago has negative effect on leafhoppers (dessication?)
 
+High precip 8 days ago has positive effect on leafhoppers
 
 # Conclusion
