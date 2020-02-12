@@ -1,7 +1,7 @@
 ---
-title: "Analysis Title"
+title: "Distributed Lag Model for Shoot Growth"
 author: "Eric R. Scott"
-date: "Date Initiated"
+date: "2020-01-15"
 output: 
   html_notebook: 
     highlight: kate
@@ -13,14 +13,11 @@ output:
 
 #TODO
 
-3. Include plant as a random effect rather than a fixed effect.  Probably will require use of `gamm4` package.
-Should be re-coded as just a number and nested inside `harvest_id`.  Like: `+ (1|harvest_id) + (harvest_id|plant)`, I think.
+- include conversion to factors in wrangling, not in this doc.
 
-include conversion to factors in wrangling, not in this doc.
+- Do i need to include time (date) as a smooth term? I don't think I need it for this because shoots are "reset" with every harvest, but I probably need it for the leafhopper model.
 
-**Do i need to include time (date) as a smooth term?  To control for temporal autocorrelation?  Look in Gasparrini again**
-
-Do separate models for temp and precip and compare with qAIC to see which one is best.
+-Do separate models for temp and precip and compare with AIC to see which one is best.
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
@@ -30,17 +27,18 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ```{r packages, message=FALSE, warning=FALSE}
 library(tidyverse)
-library(lubridate)
-library(lme4)
-library(car)
-library(broom)
-library(plotly)
+# library(lubridate)
+# library(lme4)
+# library(car)
+# library(broom)
+# library(plotly)
 library(here)
 library(conflicted)
-library(bbmle)
-library(lmtest)
+# library(bbmle)
+# library(lmtest)
 library(mgcv)
 library(dlnm)
+library(glue)
 
 conflict_prefer("filter", "dplyr")
 conflict_prefer("here", "here")
@@ -52,17 +50,39 @@ conflict_prefer("select", "dplyr")
 
 This analysis is based on Gasparrini A, Scheipl F, Armstrong B, Kenward MG (2017) A penalized framework for distributed lag non-linear models. Biometrics 73:938–948. doi: 10.1111/biom.12645.  Specifically, it is based on `ex1_01.int.R` provided in their code.  This "internal" method for distributed lag models takes full(?) advantage of built in features of `gam`s.
 
-The goal is to model the effects of temperature and precipitation on plant growth as having a quadratic, lagged effect.  The lag is modeled as a penalized cubic regression spline and the effect of temperature as a 2nd order polynomial in a crossbasis smoother. In an ideal world, the penalized spline would be the shrinkage version (bs = "cs"), but that isn't available in the crossbasis smooth constructor provided by `dlnm`.
+The goal is to model the effects of temperature and precipitation on plant growth allowing for variable shape through time (lag) and across values of the predictor using a two-dimensional smoothing function called a cross-basis function. In an ideal world, the penalized spline would be the shrinkage version (bs = "cs"), but that isn't available in the crossbasis smooth constructor provided by `dlnm`, so this uses regular penalized cubic regression splines.
 
 # Read in Data
 
 ```{r}
 shootdf <- read_rds(here("data", "cleaned", "shoots.rds"))
-head(shootdf)
+
 shootdf <- shootdf %>% 
-  separate(shoot_id, into = c("field", "harvest", "plant", "shoot"), remove = FALSE, sep = "-") %>% 
-  filter(!is.na(precip_lag14)) #get rid of plants that don't have 7 days of data
+  separate(shoot_id, into = c("field", "harvest", "plant", "shoot"),
+           remove = FALSE, sep = "-") %>% 
+  mutate(plant = as.factor(paste0(field, plant)), 
+         interharvest_id = as.factor(interharvest_id)) %>% 
+  filter(!is.na(precip_lag14)) #get rid of shoots that don't have 14 days of data
+head(shootdf)
 ```
+
+Variables I'll be using:
+
+- `growth` (response): a linear growth rate in cm ($h_t - h_{t-1}$)
+- `diameter` (co-variate): stem diameter in mm
+- `day_post` (co-variate): number of days post-harvest.  Shoots are "re-set" every harvest
+- `temp_*` (predictor): I'm using mean temperature lagged out to 14 days to make a cross-basis function
+- `precip_*` (predictor): precipitation lagged out to 14 days
+- `plant` (random effect): which plant was the shoot on
+- `interharvest_id` (random effect): combination of field ID and which interharvest period it was.  Each field x interharvest period experienced a unique climate history because harvests were not synchronized between the two fields.
+
+# Visual inspection
+
+```{r}
+ggplot(shootdf, aes(x=growth)) + geom_histogram()
+shootdf %>% filter(day_post > 10 & day_post < 15) %>% ggplot(aes(growth)) + geom_histogram()
+```
+
 
 # Distributed Lag Model: "internal" method
 
@@ -71,152 +91,176 @@ shootdf <- shootdf %>%
 Create matrices for temperature, precip, and lag.
 
 ```{r}
-temp_mat <-
+Q_temp <-
   shootdf %>% 
   select(starts_with("temp")) %>% 
   as.matrix()
 
-precip_mat <-
+Q_precip <-
   shootdf %>%
   select(starts_with("precip")) %>% 
   as.matrix()
 
-# Q_temp <- temp_mat[ , 1:6]
-Q_temp <- temp_mat #use all the data
-# L <- matrix(0:5, nrow(Q_temp), ncol(Q_temp), byrow = TRUE)
-
 L <- matrix(0:(ncol(Q_temp) - 1), nrow(Q_temp), ncol(Q_temp), byrow = TRUE)
-
-# Q_precip <- precip_mat[ , 1:6]
-Q_precip <- precip_mat
+head(L)
 ```
-
-
-Create options that override first dimension of smoother with a polynomial function instead.
-
-```{r}
-poly <- dlnm:::poly
-xt <- list(bs = "cr", argvar = list(fun = "poly", degree = 2))
-```
-
-
 ## Build the GAM
 
 ```{r}
-shootdf <- shootdf %>% mutate(plant = as.factor(plant), interharvest_id = as.factor(interharvest_id))
-w_gam_int <- 
+m_shoots <- 
   gam(growth ~ 
-        # s(Q_temp, L,
-        #   bs = "cb",
-        #   k = c(14, 14),
-        #   # xt = xt
-        #   xt = list(bs = "cr")
-        #   ) +
+        #cross-basis function for temperature
+        s(Q_temp, L,
+          bs = "cb",
+          k = c(14, 14),
+          xt = list(bs = "cr")
+          ) +
+        #cross-basis function for precipitation
         s(Q_precip, L,
           bs = "cb",
           k = c(14, 14),
-          # xt = xt
           xt = list(bs = "cr")
           ) +
-        s(day_post, bs = "cs", k = 15) + s(diameter, bs = "cs") + #fixed effects
+        s(day_post, bs = "cs", k = 15) + s(diameter, bs = "cs") + #co-variates
         s(interharvest_id, bs = "re") + s(plant, bs = "re"), #random effects
       data = shootdf,
-      family = scat,
+      family = scat, #because residuals are very leptokurtic w/ gaussian
       gamma = 1.2, #values above 1 make smoother.  Borrowed from Teller et al.
       method = "REML")
 ```
- 
+
 
 ## Inspect the GAM
 
+This gives an error, which I don't understand.  It didn't happen in earlier versions of this code when I forced the relationship between precip and shoot growth to be quadratic, so I imagine it has something to do with overfitting??  It doesn't produce any coefficients for precip, only for temp.  Weird!
+
 ```{r}
-gam.check(w_gam_int)
-summary(w_gam_int)
+try(gam.check(m_shoots))
+summary(m_shoots)
+m_shoots$converged
+m_shoots$coefficients %>% names() %>% str_detect("precip") %>% any()
 ```
 
 GAM converges, day_post had low p-value for the basis dimension check, so increased k to 15, but stopped there because it didn't increase edf at all.
 
 ```{r}
-concurvity(w_gam_int, full = TRUE)
+try(concurvity(m_shoots, full = TRUE))
 ```
-
-Both precip and temperature have potential problems with concurvity
+This currently errors, but previous versions of the analysis with more constrained relationships between weather and growth showed that both precip and temperature have potential problems with concurvity.
 
 Precip and temp are concurve(?) meaning they might be redundant in the model.  This makes sense as temperature and precip are generally correlated to some extent.
 
 ## Significance test
 
 ```{r}
-anova.gam(w_gam_int)
-summary(w_gam_int)$edf
-w_gam_int$sp
+anova.gam(m_shoots)
+# m_shoots$sp
 ```
 Significant effect of, temperature, precip, days post harvest, and diameter on growth.
 
+
+
+# Dealing with Concurvity:
+
+I think its best if I fit two GAMs---one with just temperature and one with just precipitation.  Then I will compete those with AIC and choose the model that is best.  I'll report the stuff about concurvity
+
+```{r}
+m_temp <- 
+  gam(growth ~ 
+        #cross-basis function for temperature
+        s(Q_temp, L,
+          bs = "cb",
+          k = c(14, 14),
+          xt = list(bs = "cr")
+          ) +
+        s(day_post, bs = "cs", k = 15) + s(diameter, bs = "cs") + #co-variates
+        s(interharvest_id, bs = "re") + s(plant, bs = "re"), #random effects
+      data = shootdf,
+      family = scat, #because residuals are very leptokurtic w/ gaussian
+      gamma = 1.2, #values above 1 make smoother.  Borrowed from Teller et al.
+      method = "REML")
+
+m_precip <- 
+  gam(growth ~ 
+        #cross-basis function for precipitation
+        s(Q_precip, L,
+          bs = "cb",
+          k = c(14, 14),
+          xt = list(bs = "cr")
+          ) +
+        s(day_post, bs = "cs", k = 15) + s(diameter, bs = "cs") + #co-variates
+        s(interharvest_id, bs = "re") + s(plant, bs = "re"), #random effects
+      data = shootdf,
+      family = scat, #because residuals are very leptokurtic w/ gaussian
+      gamma = 1.2, #values above 1 make smoother.  Borrowed from Teller et al.
+      method = "REML")
+```
+
+```{r}
+AIC(m_temp, m_precip)
+```
+
+# Temperature only model
+
+The temperature only model wins with lowest AIC.
+
+## Significance test
+
+```{r}
+anova(m_temp)
+```
+
+Significant effects of lagged temperature, days post harvest, stem diameter, and plant ID.
+
 ## Predictions and plots
 
-### Plot regular smooths
+### Regular smooths
 
 ```{r}
-plot(w_gam_int, pages = 1, residuals = FALSE)
+# plot(m_temp, residuals = TRUE, rug = FALSE, ylim = c(-1, 1))
+# png(here("figs", "shoot_days_post.png"))
+plot(m_temp, select = 2, xlab = "days post harvest", seWithMean = TRUE, shade = TRUE)
+# dev.off()
+
+# png(here("figs", "shoot_diameter.png"))
+plot.gam(m_temp, select = 3, xlab = "shoot diameter (mm)", seWithMean = TRUE, shade = TRUE)
+# dev.off()
 ```
-Shoots with larger diameters grow faster.  This looks like it could be a linear term, even though the edf > 1.  Shoot growth rates vary through time in a more complex manner with the fastest growth happening about 10 days post harvest and the slowest growth around 25 days post harvest.  The uptick at the end must be spurrious.
 
+Shoots with larger diameters grow faster.  Shoot growth rates vary through time in a more complex manner with the fastest growth happening about 10 days post harvest and the slowest growth around 25 days post harvest.
 
-### Plot crossbasis smooths
+### Visualizing cross-basis function
 
 ```{r}
-pred_temp <- crosspred("Q_temp", w_gam_int, cen = 22)
-pred_temp2 <- crosspred("Q_temp", w_gam_int, by = 0.2, bylag = 0.2, cen = 22)
+cen = 22
+
+pred_temp <- crosspred("Q_temp", m_temp, cen = cen)
+pred_temp2 <- crosspred("Q_temp", m_temp, by = 0.2, bylag = 0.2, cen = cen)
 
 #3D
+# png(here("figs", "shoot_contour.png"))
 plot(pred_temp,
      ptype = "contour",
      xlab = "Temperature (C)",
      ylab = "lag (days)",
-     main = "Temperature")
+     main = glue("Temperature Effects (center = {cen}ºC)"))
+# dev.off()
 
-# Overall effect of temp
+# Overall effect of temp across all 14 days of lag (I think)
+# png(here("figs", "shoot_overall.png"))
 plot(pred_temp2,
      "overall",
      ylab = "Relative Growth Rate",
      xlab = "Temperature (C)",
-     main = "Temperature Effects")
+     main = "Cumulative Temperature Effects")
+# dev.off()
 
+# png(here("figs", "shoot_lag.png"))
 plot(pred_temp2,
-     var = 26,
+     var = 27,
      xlab = "Lag (days)",
      ylab = "Relative Growth Rate",
-     main = "Effect of Lag for 26ºC")
+     main = "Effect of Lag for 27ºC")
+# dev.off()
 ```
 
-
-
-```{r}
-pred_precip <- crosspred("Q_precip", w_gam_int, cen = 63, by = 0.05)
-pred_precip2 <- crosspred("Q_precip", w_gam_int, by = 0.2, bylag = 0.2, cen = 63)
-
-#3D
-plot(pred_precip,
-     ptype = "contour",
-     xlab = "Precip (mm)",
-     ylab = "lag (days)",
-     main = "Precip")
-
-# Overall effect of temp
-plot(pred_precip2,
-     "overall",
-     ylab = "Relative Growth Rate",
-     xlab = "Precip (mm)",
-     main = "Precip")
-
-plot(pred_precip2,
-     var = 20,
-     xlab = "Lag (days)",
-     ylab = "Relative Growth Rate",
-     main = "Effect of Lag for 20 mm")
-```
-
-Strong positive effect of low precipitation 0-2 days ago. Negative effect of very high precip. This makes sense as low precip is probably associated with more sun and higher temperatures.
-
-# Conclusion
