@@ -116,7 +116,7 @@ I think this is going to be best since I'll mostly be analyzing these separately
 ```{r}
 hoppers <-
   field_data %>% 
-  select(-plant, -num_range("s", 1:7))
+  select(-num_range("s", 1:7))
 hoppers
 ```
 

@@ -74,7 +74,8 @@ hoppers4
 
 ## First get harvest dates
 
-Get harvest dates and creat intervals
+Get harvest dates and create intervals
+
 ```{r}
 harvest.dates <-
   hoppers4 %>% 
@@ -136,7 +137,8 @@ hoppers6 <-
          mean_day = mean(day, na.rm = TRUE)) %>%
   ungroup() %>% 
   arrange(field, date) %>% 
-  filter(!(field == "B" & interharvest.no == 1))
+  filter(!(field == "B" & interharvest.no == 1)) %>% 
+  mutate(plant = paste0(field, plant))
 ```
 
 # Write to file
