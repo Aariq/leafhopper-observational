@@ -106,7 +106,7 @@ head(L)
 ```
 ## Build the GAM
 
-```{r}
+```{r eval=FALSE}
 m_shoots <- 
   gam(growth ~ 
         #cross-basis function for temperature
@@ -134,7 +134,7 @@ m_shoots <-
 
 This gives an error, which I don't understand.  It didn't happen in earlier versions of this code when I forced the relationship between precip and shoot growth to be quadratic, so I imagine it has something to do with overfitting??  It doesn't produce any coefficients for precip, only for temp.  Weird!
 
-```{r}
+```{r eval = FALSE}
 try(gam.check(m_shoots))
 summary(m_shoots)
 m_shoots$converged
@@ -143,7 +143,7 @@ m_shoots$coefficients %>% names() %>% str_detect("precip") %>% any()
 
 GAM converges, day_post had low p-value for the basis dimension check, so increased k to 15, but stopped there because it didn't increase edf at all.
 
-```{r}
+```{r eval = FALSE}
 try(concurvity(m_shoots, full = TRUE))
 ```
 This currently errors, but previous versions of the analysis with more constrained relationships between weather and growth showed that both precip and temperature have potential problems with concurvity.
@@ -152,7 +152,7 @@ Precip and temp are concurve(?) meaning they might be redundant in the model.  T
 
 ## Significance test
 
-```{r}
+```{r eval = FALSE}
 anova.gam(m_shoots)
 # m_shoots$sp
 ```
@@ -165,7 +165,7 @@ Significant effect of, temperature, precip, days post harvest, and diameter on g
 I think its best if I fit two GAMs---one with just temperature and one with just precipitation.  Then I will compete those with AIC and choose the model that is best.  I'll report the stuff about concurvity
 
 ```{r}
-m_temp <- 
+m_shoot_temp <- 
   gam(growth ~ 
         #cross-basis function for temperature
         s(Q_temp, L,
@@ -180,7 +180,7 @@ m_temp <-
       gamma = 1.2, #values above 1 make smoother.  Borrowed from Teller et al.
       method = "REML")
 
-m_precip <- 
+m_shoot_precip <- 
   gam(growth ~ 
         #cross-basis function for precipitation
         s(Q_precip, L,
@@ -197,7 +197,7 @@ m_precip <-
 ```
 
 ```{r}
-AIC(m_temp, m_precip)
+AIC(m_shoot_temp, m_shoot_precip)
 ```
 
 # Temperature only model
@@ -207,7 +207,7 @@ The temperature only model wins with lowest AIC.
 ## Significance test
 
 ```{r}
-anova(m_temp)
+anova(m_shoot_temp)
 ```
 
 Significant effects of lagged temperature, days post harvest, stem diameter, and plant ID.
@@ -217,14 +217,14 @@ Significant effects of lagged temperature, days post harvest, stem diameter, and
 ### Regular smooths
 
 ```{r}
-# plot(m_temp, residuals = TRUE, rug = FALSE, ylim = c(-1, 1))
-# png(here("figs", "shoot_days_post.png"))
-plot(m_temp, select = 2, xlab = "days post harvest", seWithMean = TRUE, shade = TRUE)
-# dev.off()
+# plot(m_shoot_temp, residuals = TRUE, rug = FALSE, ylim = c(-1, 1))
+png(here("figs", "shoot_days_post.png"))
+plot(m_shoot_temp, select = 2, xlab = "days post harvest", seWithMean = TRUE, shade = TRUE, shift = coef(m_shoot_temp)[1])
+dev.off()
 
-# png(here("figs", "shoot_diameter.png"))
-plot.gam(m_temp, select = 3, xlab = "shoot diameter (mm)", seWithMean = TRUE, shade = TRUE)
-# dev.off()
+png(here("figs", "shoot_diameter.png"))
+plot.gam(m_shoot_temp, select = 3, xlab = "shoot diameter (mm)", seWithMean = TRUE, shade = TRUE, shift = coef(m_shoot_temp)[1])
+dev.off()
 ```
 
 Shoots with larger diameters grow faster.  Shoot growth rates vary through time in a more complex manner with the fastest growth happening about 10 days post harvest and the slowest growth around 25 days post harvest.
@@ -234,8 +234,8 @@ Shoots with larger diameters grow faster.  Shoot growth rates vary through time 
 ```{r}
 cen = 22
 
-pred_temp <- crosspred("Q_temp", m_temp, cen = cen)
-pred_temp2 <- crosspred("Q_temp", m_temp, by = 0.2, bylag = 0.2, cen = cen)
+pred_temp <- crosspred("Q_temp", m_shoot_temp, cen = cen)
+pred_temp2 <- crosspred("Q_temp", m_shoot_temp, by = 0.2, bylag = 0.2, cen = cen)
 
 #3D
 # png(here("figs", "shoot_contour.png"))
@@ -262,5 +262,49 @@ plot(pred_temp2,
      ylab = "Relative Growth Rate",
      main = "Effect of Lag for 27ºC")
 # dev.off()
+```
+
+
+# Precip
+
+```{r}
+anova.gam(m_shoot_precip)
+```
+
+```{r}
+plot.gam(m_shoot_precip)
+```
+
+```{r}
+cen = 50
+
+pred_precip <- crosspred("Q_precip", m_shoot_precip, cen = cen)
+pred_precip2 <- crosspred("Q_precip", m_shoot_precip, by = 0.2, bylag = 0.2, cen = cen)
+
+#3D
+png(here("figs", "shoot_precip_contour.png"))
+plot(pred_precip,
+     ptype = "contour",
+     xlab = "Precip (mm)",
+     ylab = "lag (days)",
+     main = glue::glue("Precipitation Effects (center = {cen}mm)"))
+dev.off()
+
+# Overall effect of temp across all 14 days of lag (I think)
+png(here("figs", "shoot_precip_overall.png"))
+plot(pred_precip2,
+     "overall",
+     ylab = "Relative Growth Rate",
+     xlab = "Precip (mm)",
+     main = "Cumulative Precipitation Effects")
+dev.off()
+
+png(here("figs", "shoot_precip_lag.png"))
+plot(pred_precip2,
+     var = 20,
+     xlab = "Lag (days)",
+     ylab = "Relative Growth Rate",
+     main = "Effect of Lag for 20mm")
+dev.off()
 ```
 

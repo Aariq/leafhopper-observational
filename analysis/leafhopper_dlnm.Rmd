@@ -224,37 +224,42 @@ Significant effect of plant (parametric factor), temperature, precip, days post 
 ### Plot regular smooths
 
 ```{r}
-plot(m_hopper, pages = 1, residuals = FALSE)
+plot(m_temp, pages = 1, residuals = FALSE)
 ```
-
-
 
 ### Plot crossbasis smooths
 
 ```{r}
-pred_temp <- crosspred("Q_temp", m_temp)
-pred_temp2 <- crosspred("Q_temp", m_temp, by = 0.2, bylag = 0.2, cen = 28)
+cen = 26
+pred_temp <- crosspred("Q_temp", m_temp, cen = cen)
+pred_temp2 <- crosspred("Q_temp", m_temp, by = 0.2, bylag = 0.2, cen = cen)
 
 #3D
+png(here("figs", "hopper_temp_contour.png"))
 plot(pred_temp,
      ptype = "contour",
      xlab = "Temperature (C)",
      ylab = "lag (days)",
-     main = "Temperature")
+     main = glue::glue("Temperature (center = {cen}ºC)"))
+dev.off()
 
 # Overall effect of temp
+png(here("figs", "hopper_temp_overall.png"))
 plot(pred_temp2,
      "overall",
      # ci = "bars",
      ylab = "Relative change in leafhoppers / leaf",
      xlab = "Temperature (C)",
-     main = "Temperature Effects")
+     main = "Cumulative Temperature Effects")
+dev.off()
 
+png(here("figs", "hopper_temp_lag.png"))
 plot(pred_temp2,
      var = 21,
      xlab = "Lag (days)",
      ylab = "Relative change in leafhoppers / leaf",
      main = "Effect of Lag for 21ºC")
+dev.off()
 ```
 
 Significant effect of lagged temperature, but not of date.  The further back, the greater the effect (means weather data doesnt' go far enough back to capture effect?).  Cool temperatures increase leafhopper density?!??!??!?!?!?!?!?!?!?!?
@@ -271,37 +276,45 @@ anova.gam(m_precip)
 significant effect of precip, but not of date.
 
 ```{r}
-pred_precip <- crosspred("Q_precip", m_precip, by = 0.05,
-                         # cen = 32
-                         )
-pred_precip2 <- crosspred("Q_precip", m_precip, by = 0.2, bylag = 0.2)
+cen = 40
+pred_precip <- crosspred("Q_precip", m_precip, cen = cen)
+pred_precip2 <- crosspred("Q_precip", m_precip, by = 0.2, bylag = 0.2, cen = cen)
 
 #3D
+png(here("figs", "hopper_precip_contour.png"))
 plot(pred_precip,
      ptype = "contour",
      xlab = "Precip (mm)",
      ylab = "lag (days)",
-     main = "Precip")
+     main = glue::glue("Precipitation (center = {cen}mm)"))
+dev.off()
 
 # Overall effect of precip
+png(here("figs", "hopper_precip_overall.png"))
 plot(pred_precip2,
      "overall",
-     ylab = "Relative Growth Rate",
+     ylab = "Relative change in leafhoppers / leaf",
      xlab = "Precip (mm)",
-     main = "Precip")
+     main = "Cumulative Precipitation Effect",
+     ylim = c(0,20))
+dev.off()
 
+png(here("figs", "hopper_precip_0lag.png"))
 plot(pred_precip2,
      var = 0,
      xlab = "Lag (days)",
-     ylab = "Relative Growth Rate",
+     ylab = "Relative change in leafhoppers / leaf",
      main = "Effect of Lag for 0 mm")
+dev.off()
 
+png(here("figs", "hopper_precip_80lag.png"))
 plot(pred_precip2,
      var = 80,
      xlab = "Lag (days)",
-     ylab = "Relative Growth Rate",
+     ylab = "Relative change in leafhoppers / leaf",
      main = "Effect of Lag for 80 mm")
 #CI overlaps 1 for entire range
+dve.off()
 ```
 
 Low precip at 5 and 11 days ago has negative effect on leafhoppers (dessication?)
