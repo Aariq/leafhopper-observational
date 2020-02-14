@@ -14,29 +14,21 @@ output:
 
 - Tidy up analysis
 - export figures
-- make sure doing separate GAMs for temp and precip is legit
 
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+options(scipen = 4)
 ```
 
 *Last compiled: `r Sys.Date()`*
 
 ```{r packages, message=FALSE, warning=FALSE}
 library(tidyverse)
-library(lubridate)
-library(lme4)
-library(car)
-library(broom)
-library(plotly)
 library(here)
 library(conflicted)
-library(bbmle)
-library(lmtest)
 library(mgcv)
 library(dlnm)
-library(MASS)
 
 conflict_prefer("filter", "dplyr")
 conflict_prefer("here", "here")
@@ -64,57 +56,6 @@ hoppers <- hoppers %>%
 head(hoppers)
 # str(hoppers)
 ```
-```{r}
-# plot(hoppers$temp_mean, hoppers$precip_mm)
-# cor.test(hoppers$temp_mean, hoppers$precip_mm)
-# 
-# plot(hoppers$counter, hoppers$temp_mean)
-```
-
-# Simple glm() for sanity check
-
-```{r}
-m1 <- glmer(hoppers ~ scale(temp_lag2) + scale(precip_lag2) + day_post + counter + (1|interharvest_id),
-          offset = log(n_leaves), family = poisson(link = "log"), data = hoppers)
-summary(m1)
-Anova(m1)
-
-#check for overdispersion.  Should be about 1
-sum(residuals(m1, type = "pearson")^2) / df.residual(m1)
-```
-
-'counter' is highly significant, meaning that the three of us had different detection probabilities.
-
-```{r}
-m1.a <- glmer(hoppers ~ -1 + scale(temp_lag2) + scale(precip_lag2) + day_post + counter + (1|interharvest_id),
-          offset = log(n_leaves), family = poisson(link = "log"), data = hoppers)
-fixef(m1.a)[4:6] %>% exp()
-```
-
-Can (should) I use `counter` as a random effect with only three levels?
-
-```{r}
-m1.b <- glmer(hoppers ~  scale(temp_lag2) + scale(precip_lag2) + day_post + (1|counter) + (1|interharvest_id),
-          offset = log(n_leaves), family = poisson(link = "log"), data = hoppers)
-summary(m1.b)
-Anova(m1.b)
-```
-
-I get similar estimates for coefficients, so I'm going to say yes???
-
-## with glm.nb
-
-```{r}
-m1.nb <- glmer.nb(hoppers ~ scale(temp_lag2) + scale(precip_lag2) + day_post + (1|counter) + (1|interharvest_id),
-          offset = log(n_leaves), data = hoppers)
-summary(m1.nb)
-Anova(m1.nb)
-
-#check for overdispersion.  Should be about 1
-sum(residuals(m1.nb, type = "pearson")^2) / df.residual(m1.nb)
-```
-
-Dispersion is closer to 1, but model fails to converge.  Might not be a problem in a GAM though.
 
 
 # Distributed Lag Model: "internal" method
@@ -139,42 +80,18 @@ L <- matrix(0:(ncol(Q_temp)-1), nrow(Q_temp), ncol(Q_temp), byrow = TRUE)
 
 # Build the GAMs
 
-Seems like if I use the offset it makes things *worse*.  Like, way overdispersed with poisson, but underdispersed with negbin.  Also, gam.check() just crashes if I use offset and family = nb at the same time
 
 ```{r}
-m_temp <- 
+m_hopper <- 
   gam(hoppers ~
         s(Q_temp, L,
           bs = "cb",
-          k = c(14, 14),
+          k = c(5, 7),
           xt = list(bs = "cr")
         ) +
-        # s(Q_precip, L,
-        #   bs = "cb",
-        #   k = c(14, 14),
-        #   xt = list(bs = "cr")
-        # ) +
-        s(day, bs = "cs") +
-        s(day_post, bs = "cs") +
-        s(counter, bs = "re") + #no difference with random vs. fixed
-        s(interharvest_id, bs = "re") +
-        s(plant, bs = "re"),
-      family = poisson(),
-      offset = log(n_leaves),
-      data = hoppers,
-      gamma = 1.2, #values above 1 make smoother.  Borrowed from Teller et al.
-      method = "REML")
-
-m_precip <- 
-  gam(hoppers ~
-        # s(Q_temp, L,
-        #   bs = "cb",
-        #   k = c(14, 14),
-        #   xt = list(bs = "cr")
-        # ) +
         s(Q_precip, L,
           bs = "cb",
-          k = c(14, 14),
+          k = c(5, 7),
           xt = list(bs = "cr")
         ) +
         s(day, bs = "cs") +
@@ -185,37 +102,91 @@ m_precip <-
       family = poisson(),
       offset = log(n_leaves),
       data = hoppers,
-      gamma = 1.2, #values above 1 make smoother.  Borrowed from Teller et al.
+      # gamma = 1.2, #values above 1 make smoother.  Borrowed from Teller et al.
       method = "REML")
-```
-```{r}
-AIC(m_temp, m_precip)
+beepr::beep(3)
 ```
 
-AICs nearly identical!  Keep both models??
+```{r}
+gam.check(m_hopper)
+```
+```{r}
+concurvity(m_hopper)
+# concurvity(m_hopper, full = FALSE)
+```
+
+Temp and precip are highly concurve, so can't trust p-values. I'll do the models separately.
+
+
+```{r}
+m_hopper_temp <- 
+  gam(hoppers ~
+        s(Q_temp, L,
+          bs = "cb",
+          k = c(5, 7),
+          xt = list(bs = "cr")
+        ) +
+        s(day, bs = "cs") +
+        s(day_post, bs = "cs") +
+        s(counter, bs = "re") + #no difference with random vs. fixed
+        s(interharvest_id, bs = "re") +
+        s(plant, bs = "re"),
+      family = poisson(),
+      offset = log(n_leaves),
+      data = hoppers,
+      # gamma = 1.2, #values above 1 make smoother.  Borrowed from Teller et al.
+      method = "REML")
+
+m_hopper_precip <- 
+  gam(hoppers ~
+        s(Q_precip, L,
+          bs = "cb",
+          k = c(5, 7),
+          xt = list(bs = "cr")
+        ) +
+        s(day, bs = "cs") +
+        s(day_post, bs = "cs") +
+        s(counter, bs = "re") + #no difference with random vs. fixed
+        s(interharvest_id, bs = "re") +
+        s(plant, bs = "re"),
+      family = poisson(),
+      offset = log(n_leaves),
+      data = hoppers,
+      # gamma = 1.2, #values above 1 make smoother.  Borrowed from Teller et al.
+      method = "REML")
+
+beepr::beep(3)
+```
+```{r}
+AIC(m_hopper_temp, m_hopper_precip)
+```
+
+Precip model wins.
 
 # Temperature
 
 ## Inspect the GAM
 
 ```{r}
-gam.check(m_temp)
-sum(residuals(m_temp, type = "pearson")^2) / df.residual(m_temp)
+gam.check(m_hopper_temp)
+#check for overdispersion
+sum(residuals(m_hopper_temp, type = "pearson")^2) / df.residual(m_hopper_temp)
 ```
 
 not overdispersed
 
 ```{r}
-concurvity(m_temp, full = TRUE)
-# concurvity(m_temp, full = FALSE)
+concurvity(m_hopper_temp, full = TRUE)
+# concurvity(m_hopper_temp, full = FALSE)
 ```
 
-I'm a little bit confused how temperature and counter could have such high concurvity.  Might want to check for systematic changes in counter.  I guess wei ji peng wasn't there the entire time.  Maybe he was gone for the hottest week?? 
+Day and temperature have high concurvity.  They are highly correlated, but correlations breaks down quickly through lag time  I'm going to include both.
+
 
 ## Significance test
 
 ```{r}
-anova.gam(m_temp)
+anova.gam(m_hopper_temp)
 ```
 Significant effect of plant (parametric factor), temperature, precip, days post harvest, and diameter on growth.
 
@@ -224,97 +195,105 @@ Significant effect of plant (parametric factor), temperature, precip, days post 
 ### Plot regular smooths
 
 ```{r}
-plot(m_temp, pages = 1, residuals = FALSE)
+plot(m_hopper_temp, pages = 1, residuals = FALSE)
 ```
 
 ### Plot crossbasis smooths
 
 ```{r}
-cen = 26
-pred_temp <- crosspred("Q_temp", m_temp, cen = cen)
-pred_temp2 <- crosspred("Q_temp", m_temp, by = 0.2, bylag = 0.2, cen = cen)
+# cen = 22
+cen = round(mean(hoppers$temp_mean), 2)
+# cen= NULL
+pred_temp <- crosspred("Q_temp", m_hopper_temp, cen = cen)
+pred_temp2 <- crosspred("Q_temp", m_hopper_temp, by = 0.2, bylag = 0.2, cen = cen)
 
 #3D
-png(here("figs", "hopper_temp_contour.png"))
+# png(here("figs", "hopper_temp_contour.png"))
 plot(pred_temp,
      ptype = "contour",
      xlab = "Temperature (C)",
      ylab = "lag (days)",
      main = glue::glue("Temperature (center = {cen}ºC)"))
-dev.off()
+# dev.off()
 
 # Overall effect of temp
-png(here("figs", "hopper_temp_overall.png"))
+# png(here("figs", "hopper_temp_overall.png"))
 plot(pred_temp2,
      "overall",
      # ci = "bars",
      ylab = "Relative change in leafhoppers / leaf",
      xlab = "Temperature (C)",
      main = "Cumulative Temperature Effects")
-dev.off()
+# dev.off()
 
-png(here("figs", "hopper_temp_lag.png"))
+# png(here("figs", "hopper_temp_lag.png"))
 plot(pred_temp2,
      var = 21,
      xlab = "Lag (days)",
      ylab = "Relative change in leafhoppers / leaf",
      main = "Effect of Lag for 21ºC")
-dev.off()
+# dev.off()
 ```
 
-Significant effect of lagged temperature, but not of date.  The further back, the greater the effect (means weather data doesnt' go far enough back to capture effect?).  Cool temperatures increase leafhopper density?!??!??!?!?!?!?!?!?!?!?
+Cooler temperatures are good for leafhoppers.  Little discernable effect of lag.  Not sure how to interpret
+
 
 # Precip
-```{r}
-gam.check(m_precip)
-```
 
 ```{r}
-anova.gam(m_precip)
+gam.check(m_hopper_precip)
+```
+```{r}
+concurvity(m_hopper_precip)
+# concurvity(m_hopper_precip, full = FALSE)
+```
+
+
+```{r}
+anova.gam(m_hopper_precip)
 ```
 
 significant effect of precip, but not of date.
 
 ```{r}
 cen = 40
-pred_precip <- crosspred("Q_precip", m_precip, cen = cen)
-pred_precip2 <- crosspred("Q_precip", m_precip, by = 0.2, bylag = 0.2, cen = cen)
+pred_precip <- crosspred("Q_precip", m_hopper_precip, cen = cen)
+pred_precip2 <- crosspred("Q_precip", m_hopper_precip, by = 0.2, bylag = 0.2, cen = cen)
 
 #3D
-png(here("figs", "hopper_precip_contour.png"))
+# png(here("figs", "hopper_precip_contour.png"))
 plot(pred_precip,
      ptype = "contour",
      xlab = "Precip (mm)",
      ylab = "lag (days)",
      main = glue::glue("Precipitation (center = {cen}mm)"))
-dev.off()
+# dev.off()
 
 # Overall effect of precip
-png(here("figs", "hopper_precip_overall.png"))
+# png(here("figs", "hopper_precip_overall.png"))
 plot(pred_precip2,
      "overall",
      ylab = "Relative change in leafhoppers / leaf",
      xlab = "Precip (mm)",
      main = "Cumulative Precipitation Effect",
      ylim = c(0,20))
-dev.off()
+# dev.off()
 
-png(here("figs", "hopper_precip_0lag.png"))
+# png(here("figs", "hopper_precip_0lag.png"))
 plot(pred_precip2,
      var = 0,
      xlab = "Lag (days)",
      ylab = "Relative change in leafhoppers / leaf",
      main = "Effect of Lag for 0 mm")
-dev.off()
+# dev.off()
 
-png(here("figs", "hopper_precip_80lag.png"))
+# png(here("figs", "hopper_precip_80lag.png"))
 plot(pred_precip2,
      var = 80,
      xlab = "Lag (days)",
      ylab = "Relative change in leafhoppers / leaf",
      main = "Effect of Lag for 80 mm")
-#CI overlaps 1 for entire range
-dve.off()
+# dve.off()
 ```
 
 Low precip at 5 and 11 days ago has negative effect on leafhoppers (dessication?)
