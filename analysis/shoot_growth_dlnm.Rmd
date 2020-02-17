@@ -53,7 +53,7 @@ shootdf <- shootdf %>%
            remove = FALSE, sep = "-") %>% 
   mutate(plant = as.factor(paste0(field, plant)), 
          interharvest_id = as.factor(interharvest_id)) %>% 
-  filter(!is.na(precip_lag14)) #get rid of shoots that don't have 14 days of data
+  filter(!is.na(precip_lag15)) #get rid of shoots that don't have 15 days of data
 head(shootdf)
 ```
 
@@ -92,7 +92,7 @@ Q_precip <-
   as.matrix()
 
 L <- matrix(0:(ncol(Q_temp) - 1), nrow(Q_temp), ncol(Q_temp), byrow = TRUE)
-head(L)
+# head(L)
 ```
 ## Build the GAM
 
@@ -145,10 +145,6 @@ anova.gam(m_shoots)
 m_shoots$sp
 ```
 
-s(Q_temp,L)Svar    s(Q_temp,L)Slag  s(Q_precip,L)Svar  s(Q_precip,L)Slag        s(day_post) 
-      9.338425e+03       1.085221e+04       2.145363e+00       1.122225e+09       8.649570e+04 
-       s(diameter) s(interharvest_id)           s(plant) 
-      1.905747e+05       1.256220e+02       3.520699e+02 
 
 Significant effect of, temperature, precip, days post harvest, and diameter on growth.
 
@@ -255,16 +251,18 @@ Shoots with larger diameters grow faster.  Shoot growth rates vary through time 
 ### Visualizing cross-basis function
 
 ```{r echo=FALSE}
-cen = 22
+# cen = 22
+# cen = NULL
+cen = round(mean(shootdf$temp_mean), 1)
 
 pred_temp <- crosspred("Q_temp", m_shoot_temp, cen = cen)
 pred_temp2 <- crosspred("Q_temp", m_shoot_temp, by = 0.2, bylag = 0.2, cen = cen)
 
 #3D
-# png(here("figs", "shoot_contour.png"))
+# png(here("figs", "shoot_temp_contour.png"))
 plot(pred_temp,
      ptype = "contour",
-     xlab = "Temperature (C)",
+     xlab = "Temperature (ºC)",
      ylab = "lag (days)",
      main = glue("Temperature Effects (center = {cen}ºC)"))
 # dev.off()
@@ -274,16 +272,16 @@ plot(pred_temp,
 plot(pred_temp2,
      "overall",
      ylab = "Relative Growth Rate",
-     xlab = "Temperature (C)",
+     xlab = "Temperature (ºC)",
      main = "Cumulative Temperature Effects")
 # dev.off()
 
 # png(here("figs", "shoot_lag.png"))
 plot(pred_temp2,
-     var = 27,
+     var = 21,
      xlab = "Lag (days)",
      ylab = "Relative Growth Rate",
-     main = "Effect of Lag for 27ºC")
+     main = "Effect of Lag for 21ºC")
 # dev.off()
 ```
 
@@ -299,9 +297,9 @@ plot.gam(m_shoot_precip, pages = 1)
 ```
 
 ```{r echo=FALSE}
-cen = 50
+# cen = 50
 # cen = NULL
-# cen = mean(shootdf$precip_mm)
+cen = round(mean(shootdf$precip_mm), 1)
 
 pred_precip <- crosspred("Q_precip", m_shoot_precip, cen = cen)
 pred_precip2 <- crosspred("Q_precip", m_shoot_precip, by = 0.2, bylag = 0.2, cen = cen)
@@ -310,8 +308,8 @@ pred_precip2 <- crosspred("Q_precip", m_shoot_precip, by = 0.2, bylag = 0.2, cen
 # png(here("figs", "shoot_precip_contour.png"))
 plot(pred_precip,
      ptype = "contour",
-     xlab = "Precip (mm)",
-     ylab = "lag (days)",
+     xlab = "Precipitation (mm)",
+     ylab = "Lag (days)",
      main = glue::glue("Precipitation Effects (center = {cen}mm)"))
 # dev.off()
 
@@ -326,10 +324,10 @@ plot(pred_precip2,
 
 # png(here("figs", "shoot_precip_lag.png"))
 plot(pred_precip2,
-     var = 20,
+     var = 80,
      xlab = "Lag (days)",
      ylab = "Relative Growth Rate",
-     main = "Effect of Lag for 20mm")
+     main = "Effect of Lag for 80mm")
 # dev.off()
 ```
 

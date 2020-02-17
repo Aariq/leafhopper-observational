@@ -242,10 +242,13 @@ precip <-
 join modified weather data now
 
 ```{r}
+nlags = 15
 weather <- full_join(temperature, precip, by = "date") %>% arrange(date)
 
-temp_lags <- map_dfc(1:14, ~lag(weather$temp_mean, .x)) %>% set_names(glue::glue("temp_lag{1:14}"))
-precip_lags <- map_dfc(1:14, ~lag(weather$precip_mm, .x)) %>% set_names(glue::glue("precip_lag{1:14}"))
+temp_lags <- map_dfc(1:nlags, ~lag(weather$temp_mean, .x)) %>%
+  set_names(glue::glue("temp_lag{1:nlags}"))
+precip_lags <- map_dfc(1:nlags, ~lag(weather$precip_mm, .x)) %>%
+  set_names(glue::glue("precip_lag{1:nlags}"))
 
 weather_lags <- bind_cols(weather, temp_lags, precip_lags) %>% 
   select(date, starts_with("temp_"), starts_with("precip_"))
