@@ -96,7 +96,7 @@ L <- matrix(0:(ncol(Q_temp) - 1), nrow(Q_temp), ncol(Q_temp), byrow = TRUE)
 ```
 ## Build the GAM
 
-```{r eval=FALSE}
+```{r}
 m_shoots <- 
   gam(growth ~ 
         #cross-basis function for temperature
@@ -217,6 +217,7 @@ beepr::beep(4)
 
 ```{r}
 AIC(m_shoot_temp, m_shoot_precip)
+bbmle::ICtab(m_shoot_temp, m_shoot_precip)
 ```
 
 # Temperature only model

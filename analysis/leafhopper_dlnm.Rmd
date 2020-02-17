@@ -51,7 +51,7 @@ hoppers <- hoppers %>%
   mutate(interharvest_id = as.factor(paste0(field, interharvest.no)),
          counter = as.factor(counter),
          plant = as.factor(plant)) %>% 
-  filter(!is.na(precip_lag14)) #get rid of plants that don't have 14 days of data
+  filter(!is.na(precip_lag15)) #get rid of plants that don't have 15 days of data
 
 head(hoppers)
 # str(hoppers)
@@ -159,6 +159,7 @@ beepr::beep(3)
 ```
 ```{r}
 AIC(m_hopper_temp, m_hopper_precip)
+bbmle::ICtab(m_hopper_temp, m_hopper_precip)
 ```
 
 Precip model wins.
@@ -208,13 +209,13 @@ pred_temp <- crosspred("Q_temp", m_hopper_temp, cen = cen)
 pred_temp2 <- crosspred("Q_temp", m_hopper_temp, by = 0.2, bylag = 0.2, cen = cen)
 
 #3D
-# png(here("figs", "hopper_temp_contour.png"))
+png(here("figs", "hopper_temp_contour.png"))
 plot(pred_temp,
      ptype = "contour",
      xlab = "Temperature (C)",
      ylab = "lag (days)",
      main = glue::glue("Temperature (center = {cen}ºC)"))
-# dev.off()
+dev.off()
 
 # Overall effect of temp
 # png(here("figs", "hopper_temp_overall.png"))
@@ -256,7 +257,13 @@ anova.gam(m_hopper_precip)
 significant effect of precip, but not of date.
 
 ```{r}
-cen = 40
+plot(m_hopper_precip)
+```
+
+```{r}
+# cen = 40
+# cen = NULL
+cen = round(mean(hoppers$temp_mean),1)
 pred_precip <- crosspred("Q_precip", m_hopper_precip, cen = cen)
 pred_precip2 <- crosspred("Q_precip", m_hopper_precip, by = 0.2, bylag = 0.2, cen = cen)
 
@@ -281,7 +288,7 @@ plot(pred_precip2,
 
 # png(here("figs", "hopper_precip_0lag.png"))
 plot(pred_precip2,
-     var = 0,
+     var = 1,
      xlab = "Lag (days)",
      ylab = "Relative change in leafhoppers / leaf",
      main = "Effect of Lag for 0 mm")
@@ -298,6 +305,6 @@ plot(pred_precip2,
 
 Low precip at 5 and 11 days ago has negative effect on leafhoppers (dessication?)
 
-High precip 8 days ago has positive effect on leafhoppers
+High precip has positive effect on leafhoppers
 
 # Conclusion
