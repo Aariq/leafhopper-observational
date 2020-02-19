@@ -259,7 +259,8 @@ shoot_pd<- plot(m_shoot_temp, select = 2, xlab = "days post harvest", seWithMean
 # dev.off()
 dph <- shoot_pd[[2]]
 
-tibble(x = dph$x, se = dph$se, y = dph$fit + coef(m_shoot_temp)[1]) %>% 
+dph_plot <-
+  tibble(x = dph$x, se = dph$se, y = dph$fit + coef(m_shoot_temp)[1]) %>% 
   ggplot(aes(x, y)) + 
   geom_line() +
   geom_ribbon(aes(ymin = y-se, ymax = y+se), alpha = 0.2) +
@@ -273,7 +274,8 @@ plot.gam(m_shoot_temp, select = 3, xlab = "shoot diameter (mm)", ylab = "Shoot g
 # dev.off()
 
 dia <- shoot_pd[[3]]
-tibble(x = dia$x, se = dia$se, y = dia$fit + coef(m_shoot_temp)[1]) %>% 
+dia_plot <- 
+  tibble(x = dia$x, se = dia$se, y = dia$fit + coef(m_shoot_temp)[1]) %>% 
   ggplot(aes(x, y)) + 
   geom_line() +
   geom_ribbon(aes(ymin = y-se, ymax = y+se), alpha = 0.2) +
@@ -352,6 +354,21 @@ shoot_temp_contour <-
   scale_x_continuous("Temperature (ºC)", expand = c(0,0)) +
   theme(text = element_text(size = 14))
 save_plot(here("figs", "shoot_temp_contour.png"), shoot_temp_contour)
+```
+```{r}
+library(patchwork)
+(dph_plot / dia_plot) | shoot_temp_contour 
+
+layout <-
+"
+AAACCCCCC
+AAACCCCCC
+BBBCCCCCC
+BBBCCCCCC
+"
+
+dph_plot + dia_plot + shoot_temp_contour +  plot_layout(design = layout)
+
 ```
 
 # Precip
