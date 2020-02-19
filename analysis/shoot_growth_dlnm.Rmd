@@ -14,7 +14,7 @@ output:
 #TODO
 
 - include conversion to factors in wrangling, not in this doc.
-- create contour predict plot "manually" by creating a new dataframe from `shootdf` with an "average" shoot, but change lagged temp.  OR figure out how to center the plot so it's interpreted as growth relative to mean??
+
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
@@ -23,6 +23,8 @@ options(scipen = 4)
 
 *Last compiled: `r Sys.Date()`*
 
+# Packages
+
 ```{r packages, message=FALSE, warning=FALSE}
 library(tidyverse)
 library(here)
@@ -30,11 +32,24 @@ library(conflicted)
 library(mgcv)
 library(dlnm)
 library(glue)
+library(colorspace)
+library(cowplot)
 
 conflict_prefer("filter", "dplyr")
 conflict_prefer("here", "here")
 conflict_prefer("lag", "dplyr")
 conflict_prefer("select", "dplyr")
+```
+
+# Functions
+```{r}
+mean_matrix <- function(m, nrow){
+  m_new <- m %>% 
+    colMeans() %>%
+    matrix(ncol = ncol(m), nrow = nrow, byrow = TRUE)
+  colnames(m_new) <- colnames(m)
+  return(m_new)
+}
 ```
 
 # Goal
@@ -148,6 +163,7 @@ m_shoots$sp
 
 Significant effect of, temperature, precip, days post harvest, and diameter on growth.
 
+
 ```{r echo=FALSE}
 cen = 22
 # cen = mean(shootdf$temp_mean)
@@ -249,43 +265,67 @@ plot.gam(m_shoot_temp, select = 3, xlab = "shoot diameter (mm)", seWithMean = TR
 
 Shoots with larger diameters grow faster.  Shoot growth rates vary through time in a more complex manner with the fastest growth happening about 10 days post harvest and the slowest growth around 25 days post harvest.
 
-### Visualizing cross-basis function
+### Partial effects plot for cross-basis function
 
-```{r echo=FALSE}
-# cen = 22
-# cen = NULL
-cen = round(mean(shootdf$temp_mean), 1)
+#### Make newdata
 
-pred_temp <- crosspred("Q_temp", m_shoot_temp, cen = cen)
-pred_temp2 <- crosspred("Q_temp", m_shoot_temp, by = 0.2, bylag = 0.2, cen = cen)
+```{r}
+testvals <- seq(min(Q_temp), max(Q_temp), 0.1)
 
-#3D
-# png(here("figs", "shoot_temp_contour.png"))
-plot(pred_temp,
-     ptype = "contour",
-     xlab = "Temperature (ºC)",
-     ylab = "lag (days)",
-     main = glue("Temperature Effects (center = {cen}ºC)"))
-# dev.off()
-
-# Overall effect of temp across all 14 days of lag (I think)
-# png(here("figs", "shoot_overall.png"))
-plot(pred_temp2,
-     "overall",
-     ylab = "Relative Growth Rate",
-     xlab = "Temperature (ºC)",
-     main = "Cumulative Temperature Effects")
-# dev.off()
-
-# png(here("figs", "shoot_lag.png"))
-plot(pred_temp2,
-     var = 21,
-     xlab = "Lag (days)",
-     ylab = "Relative Growth Rate",
-     main = "Effect of Lag for 21ºC")
-# dev.off()
+Q_temp_new <- mean_matrix(Q_temp, length(testvals))
+L_new <- mean_matrix(L, length(testvals))
+day_post_new <- rep(mean(shootdf$day_post), length(testvals))
+diameter_new <- rep(mean(shootdf$diameter), length(testvals))
+interharvest_id_new <- rep("newlevel", length(testvals))
+plant_new <- rep("newlevel", length(testvals))
 ```
 
+#### predict loops
+
+```{r}
+resp_t <- array(dim = c(length(testvals), ncol(Q_temp_new)))
+rownames(resp_t) <- testvals
+
+#loop through columns of matrix, replace with testvals, predict fitted.
+for(i in 1:ncol(Q_temp_new)) {
+  P1_i <- Q_temp_new
+  P1_i[, i] <- testvals
+  resp_t[, i] <-
+    suppressWarnings( #new levels of random effects are on purpose
+      predict(
+        m_shoot_temp,
+        newdata = list(
+          Q_temp = P1_i,
+          L = L_new,
+          day_post = day_post_new,
+          diameter = diameter_new,
+          interharvest_id = interharvest_id_new,
+          plant = plant_new
+        )
+      )
+    )
+}
+```
+
+#### Make the plot
+
+```{r}
+st_pd <-
+  resp_t %>% 
+  as_tibble(rownames = "x") %>% 
+  pivot_longer(cols = starts_with("V"), names_to = "lag", names_prefix = "V", values_to = "fitted") %>% 
+  mutate(lag = as.double(lag) - 1, x = as.double(x)) 
+
+shoot_temp_contour <-
+  ggplot(st_pd, aes(x = x, y = lag, z = fitted, fill = fitted)) +
+  geom_raster(interpolate = TRUE) +
+  geom_contour(color = "black", alpha = 0.2) +
+  scale_fill_viridis_c("Shoot growth \n(cm/day)", option = "D") + 
+  scale_y_continuous("Lag (days)", expand = c(0,0)) + 
+  scale_x_continuous("Temperature (ºC)", expand = c(0,0)) +
+  theme(text = element_text(size = 14))
+save_plot(here("figs", "shoot_temp_contour.png"), shoot_temp_contour)
+```
 
 # Precip
 
@@ -297,38 +337,65 @@ anova.gam(m_shoot_precip)
 plot.gam(m_shoot_precip, pages = 1)
 ```
 
-```{r echo=FALSE}
-# cen = 50
-# cen = NULL
-cen = round(mean(shootdf$precip_mm), 1)
+### Partial effects plot for cross-basis function
 
-pred_precip <- crosspred("Q_precip", m_shoot_precip, cen = cen)
-pred_precip2 <- crosspred("Q_precip", m_shoot_precip, by = 0.2, bylag = 0.2, cen = cen)
+#### Make newdata
 
-#3D
-# png(here("figs", "shoot_precip_contour.png"))
-plot(pred_precip,
-     ptype = "contour",
-     xlab = "Precipitation (mm)",
-     ylab = "Lag (days)",
-     main = glue::glue("Precipitation Effects (center = {cen}mm)"))
-# dev.off()
+```{r}
+testvals <- seq(min(Q_precip), max(Q_precip), 0.1)
 
-# Overall effect of temp across all 14 days of lag (I think)
-# png(here("figs", "shoot_precip_overall.png"))
-plot(pred_precip2,
-     "overall",
-     ylab = "Relative Growth Rate",
-     xlab = "Precip (mm)",
-     main = "Cumulative Precipitation Effects")
-# dev.off()
+Q_precip_new <- mean_matrix(Q_precip, length(testvals))
+L_new <- mean_matrix(L, length(testvals))
+day_post_new <- rep(mean(shootdf$day_post), length(testvals))
+diameter_new <- rep(mean(shootdf$diameter), length(testvals))
+interharvest_id_new <- rep("newlevel", length(testvals))
+plant_new <- rep("newlevel", length(testvals))
+```
 
-# png(here("figs", "shoot_precip_lag.png"))
-plot(pred_precip2,
-     var = 80,
-     xlab = "Lag (days)",
-     ylab = "Relative Growth Rate",
-     main = "Effect of Lag for 80mm")
-# dev.off()
+#### predict loops
+
+```{r}
+resp_p <- array(dim = c(length(testvals), ncol(Q_precip_new)))
+rownames(resp_p) <- testvals
+
+#loop through columns of matrix, replace with testvals, predict fitted.
+for(i in 1:ncol(Q_precip_new)) {
+  P1_i <- Q_precip_new
+  P1_i[, i] <- testvals
+  resp_p[, i] <-
+    suppressWarnings( #new levels of random effects are on purpose
+      predict(
+        m_shoot_precip,
+        newdata = list(
+          Q_precip = P1_i,
+          L = L_new,
+          day_post = day_post_new,
+          diameter = diameter_new,
+          interharvest_id = interharvest_id_new,
+          plant = plant_new
+        )
+      )
+    )
+}
+```
+
+#### Make the plot
+
+```{r}
+sp_pd <-
+  resp_p %>% 
+  as_tibble(rownames = "x") %>% 
+  pivot_longer(cols = starts_with("V"), names_to = "lag", names_prefix = "V", values_to = "fitted") %>% 
+  mutate(lag = as.double(lag), x = as.double(x)) 
+
+shoot_precip_contour <-
+  ggplot(sp_pd, aes(x = x, y = lag, z = fitted, fill = fitted)) +
+  geom_raster(interpolate = TRUE) +
+  geom_contour(color = "black", alpha = 0.2) +
+  scale_fill_viridis_c("Shoot growth \n(cm/day)", option = "D") + 
+  scale_y_continuous("Lag (days)", expand = c(0,0)) + 
+  scale_x_continuous("Precipitation (mm)", expand = c(0,0)) +
+  theme(text = element_text(size = 14))
+save_plot(here("figs", "shoot_precip_contour.png"), shoot_precip_contour)
 ```
 

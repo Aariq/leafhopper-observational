@@ -29,11 +29,24 @@ library(here)
 library(conflicted)
 library(mgcv)
 library(dlnm)
+library(colorspace)
+library(cowplot)
 
 conflict_prefer("filter", "dplyr")
 conflict_prefer("here", "here")
 conflict_prefer("lag", "dplyr")
 conflict_prefer("select", "dplyr")
+```
+
+# Functions
+```{r}
+mean_matrix <- function(m, nrow){
+  m_new <- m %>% 
+    colMeans() %>%
+    matrix(ncol = ncol(m), nrow = nrow, byrow = TRUE)
+  colnames(m_new) <- colnames(m)
+  return(m_new)
+}
 ```
 
 # Goal
@@ -199,42 +212,72 @@ Significant effect of plant (parametric factor), temperature, precip, days post 
 plot(m_hopper_temp, pages = 1, residuals = FALSE)
 ```
 
-### Plot crossbasis smooths
+### Partial effects plot for cross-basis function
+
+#### Make newdata
 
 ```{r}
-# cen = 22
-cen = round(mean(hoppers$temp_mean), 2)
-# cen= NULL
-pred_temp <- crosspred("Q_temp", m_hopper_temp, cen = cen)
-pred_temp2 <- crosspred("Q_temp", m_hopper_temp, by = 0.2, bylag = 0.2, cen = cen)
+m_hopper_temp
+testvals <- seq(min(Q_temp), max(Q_temp), 0.1)
 
-#3D
-png(here("figs", "hopper_temp_contour.png"))
-plot(pred_temp,
-     ptype = "contour",
-     xlab = "Temperature (C)",
-     ylab = "lag (days)",
-     main = glue::glue("Temperature (center = {cen}ºC)"))
-dev.off()
-
-# Overall effect of temp
-# png(here("figs", "hopper_temp_overall.png"))
-plot(pred_temp2,
-     "overall",
-     # ci = "bars",
-     ylab = "Relative change in leafhoppers / leaf",
-     xlab = "Temperature (C)",
-     main = "Cumulative Temperature Effects")
-# dev.off()
-
-# png(here("figs", "hopper_temp_lag.png"))
-plot(pred_temp2,
-     var = 21,
-     xlab = "Lag (days)",
-     ylab = "Relative change in leafhoppers / leaf",
-     main = "Effect of Lag for 21ºC")
-# dev.off()
+Q_temp_new <- mean_matrix(Q_temp, length(testvals))
+L_new <- mean_matrix(L, length(testvals))
+day_post_new <- rep(mean(hoppers$day_post), length(testvals))
+day_new <- rep(mean(hoppers$day), length(testvals))
+interharvest_id_new <- rep("newlevel", length(testvals))
+plant_new <- rep("newlevel", length(testvals))
+counter_new <- rep("newlevel", length(testvals))
 ```
+
+#### predict loops
+
+```{r}
+resp_t <- array(dim = c(length(testvals), ncol(Q_temp_new)))
+rownames(resp_t) <- testvals
+
+#loop through columns of matrix, replace with testvals, predict fitted.
+for(i in 1:ncol(Q_temp_new)) {
+  P1_i <- Q_temp_new
+  P1_i[, i] <- testvals
+  resp_t[, i] <-
+    suppressWarnings( #new levels of random effects are on purpose
+      predict(
+        m_hopper_temp,
+        newdata = list(
+          Q_temp = P1_i,
+          L = L_new,
+          day_post = day_post_new,
+          day = day_new,
+          interharvest_id = interharvest_id_new,
+          plant = plant_new,
+          counter = counter_new
+        ),
+        type = "response"
+      )
+    )
+}
+```
+
+#### Make the plot
+
+```{r}
+ht_pd <-
+  resp_t %>% 
+  as_tibble(rownames = "x") %>% 
+  pivot_longer(cols = starts_with("V"), names_to = "lag", names_prefix = "V", values_to = "fitted") %>% 
+  mutate(lag = as.double(lag) - 1, x = as.double(x)) 
+
+hopper_temp_contour <-
+  ggplot(ht_pd, aes(x = x, y = lag, z = fitted, fill = fitted)) +
+  geom_raster(interpolate = TRUE) +
+  geom_contour(color = "black", alpha = 0.2) +
+  scale_fill_viridis_c("Leafhoppers per leaf", option = "D") + 
+  scale_y_continuous("Lag (days)", expand = c(0,0)) + 
+  scale_x_continuous("Temperature (ºC)", expand = c(0,0)) +
+  theme(text = element_text(size = 14))
+save_plot(here("figs", "hopper_temp_contour.png"), hopper_temp_contour)
+```
+
 
 Cooler temperatures are good for leafhoppers.  Little discernable effect of lag.  Not sure how to interpret
 
@@ -260,49 +303,72 @@ significant effect of precip, but not of date.
 plot(m_hopper_precip)
 ```
 
+
+### Partial effects plot for cross-basis function
+
+#### Make newdata
+
 ```{r}
-# cen = 40
-# cen = NULL
-cen = round(mean(hoppers$temp_mean),1)
-pred_precip <- crosspred("Q_precip", m_hopper_precip, cen = cen)
-pred_precip2 <- crosspred("Q_precip", m_hopper_precip, by = 0.2, bylag = 0.2, cen = cen)
+m_hopper_precip
+testvals <- seq(min(Q_precip), max(Q_precip), 0.1)
 
-#3D
-# png(here("figs", "hopper_precip_contour.png"))
-plot(pred_precip,
-     ptype = "contour",
-     xlab = "Precip (mm)",
-     ylab = "lag (days)",
-     main = glue::glue("Precipitation (center = {cen}mm)"))
-# dev.off()
-
-# Overall effect of precip
-# png(here("figs", "hopper_precip_overall.png"))
-plot(pred_precip2,
-     "overall",
-     ylab = "Relative change in leafhoppers / leaf",
-     xlab = "Precip (mm)",
-     main = "Cumulative Precipitation Effect",
-     ylim = c(0,20))
-# dev.off()
-
-# png(here("figs", "hopper_precip_0lag.png"))
-plot(pred_precip2,
-     var = 1,
-     xlab = "Lag (days)",
-     ylab = "Relative change in leafhoppers / leaf",
-     main = "Effect of Lag for 0 mm")
-# dev.off()
-
-# png(here("figs", "hopper_precip_80lag.png"))
-plot(pred_precip2,
-     var = 80,
-     xlab = "Lag (days)",
-     ylab = "Relative change in leafhoppers / leaf",
-     main = "Effect of Lag for 80 mm")
-# dve.off()
+Q_precip_new <- mean_matrix(Q_precip, length(testvals))
+L_new <- mean_matrix(L, length(testvals))
+day_post_new <- rep(mean(hoppers$day_post), length(testvals))
+day_new <- rep(mean(hoppers$day), length(testvals))
+interharvest_id_new <- rep("newlevel", length(testvals))
+plant_new <- rep("newlevel", length(testvals))
+counter_new <- rep("newlevel", length(testvals))
 ```
 
+#### predict loops
+
+```{r}
+resp_p <- array(dim = c(length(testvals), ncol(Q_precip_new)))
+rownames(resp_p) <- testvals
+
+#loop through columns of matrix, replace with testvals, predict fitted.
+for(i in 1:ncol(Q_precip_new)) {
+  P1_i <- Q_precip_new
+  P1_i[, i] <- testvals
+  resp_p[, i] <-
+    suppressWarnings( #new levels of random effects are on purpose
+      predict(
+        m_hopper_precip,
+        newdata = list(
+          Q_precip = P1_i,
+          L = L_new,
+          day_post = day_post_new,
+          day = day_new,
+          interharvest_id = interharvest_id_new,
+          plant = plant_new,
+          counter = counter_new
+        ),
+        type = "response"
+      )
+    )
+}
+```
+
+#### Make the plot
+
+```{r}
+hp_pd <-
+  resp_p %>% 
+  as_tibble(rownames = "x") %>% 
+  pivot_longer(cols = starts_with("V"), names_to = "lag", names_prefix = "V", values_to = "fitted") %>% 
+  mutate(lag = as.double(lag) - 1, x = as.double(x)) 
+
+hopper_precip_contour <-
+  ggplot(hp_pd, aes(x = x, y = lag, z = fitted, fill = fitted)) +
+  geom_raster(interpolate = TRUE) +
+  geom_contour(color = "black", alpha = 0.2) +
+  scale_fill_viridis_c("Leafhoppers per leaf", option = "D") + 
+  scale_y_continuous("Lag (days)", expand = c(0,0)) + 
+  scale_x_continuous("Precipitation (mm)", expand = c(0,0)) +
+  theme(text = element_text(size = 14))
+save_plot(here("figs", "hopper_precip_contour.png"), hopper_precip_contour)
+```
 Low precip at 5 and 11 days ago has negative effect on leafhoppers (dessication?)
 
 High precip has positive effect on leafhoppers
