@@ -107,7 +107,7 @@ m_hopper <-
           k = c(5, 7),
           xt = list(bs = "cr")
         ) +
-        s(day, bs = "cs") +
+        # s(day, bs = "cs") +
         s(day_post, bs = "cs") +
         s(counter, bs = "re") + #no difference with random vs. fixed
         s(interharvest_id, bs = "re") +
@@ -126,6 +126,9 @@ gam.check(m_hopper)
 ```{r}
 concurvity(m_hopper)
 # concurvity(m_hopper, full = FALSE)
+
+ggplot(hoppers, aes(x = date, y = temp_mean)) +
+  geom_jitter(alpha = 0.3)
 ```
 
 Temp and precip are highly concurve, so can't trust p-values. I'll do the models separately.
@@ -139,7 +142,7 @@ m_hopper_temp <-
           k = c(5, 7),
           xt = list(bs = "cr")
         ) +
-        s(day, bs = "cs") +
+        # s(day, bs = "cs") +
         s(day_post, bs = "cs") +
         s(counter, bs = "re") + #no difference with random vs. fixed
         s(interharvest_id, bs = "re") +
@@ -157,6 +160,19 @@ m_hopper_precip <-
           k = c(5, 7),
           xt = list(bs = "cr")
         ) +
+        # s(day, bs = "cs") +
+        s(day_post, bs = "cs") +
+        s(counter, bs = "re") + #no difference with random vs. fixed
+        s(interharvest_id, bs = "re") +
+        s(plant, bs = "re"),
+      family = poisson(),
+      offset = log(n_leaves),
+      data = hoppers,
+      # gamma = 1.2, #values above 1 make smoother.  Borrowed from Teller et al.
+      method = "REML")
+
+m_hopper_date <- 
+  gam(hoppers ~
         s(day, bs = "cs") +
         s(day_post, bs = "cs") +
         s(counter, bs = "re") + #no difference with random vs. fixed
@@ -170,12 +186,108 @@ m_hopper_precip <-
 
 beepr::beep(3)
 ```
+
 ```{r}
+anova.gam(m_hopper_date)
+anova.gam(m_hopper_precip)
+anova.gam(m_hopper_temp)
 AIC(m_hopper_temp, m_hopper_precip)
-bbmle::ICtab(m_hopper_temp, m_hopper_precip)
+bbmle::ICtab(m_hopper_temp, m_hopper_precip, m_hopper_date)
 ```
 
 Precip model wins.
+
+
+# Try a rate model
+
+Let's see if I can fit a model that estimates the growth rate of leafhoppers per leaf.  Then I can just ignore the "day" covariate and maybe even the days_post covariate.
+
+
+$$
+log \bigg(\frac{H_t/L_t}{H_{t-1}/L_{t-1}} \bigg) = \beta_0 + ...
+$$
+$$
+ log\bigg(\frac{H_t \times L_{t-1}}{H_{t-1} \times L_t}\bigg) = log(H_t) + log(L_{t-1}) - log(H_{t-1}) -log(L_t)
+$$
+$$
+log(H_t) = \beta_0 +...+ \textrm{offset}[log(L_t) + log(H_{t-1}) - log(L_{t-1})]
+$$
+
+
+```{r}
+hoppers2 <- hoppers %>% 
+  group_by(plant) %>% 
+  mutate(hoppers_prev = lag(hoppers),
+         n_leaves_prev = lag(n_leaves)) %>% 
+  filter(!is.na(n_leaves_prev)) %>% 
+  ungroup() %>% 
+  mutate(h_per_l = hoppers / n_leaves,
+         h_per_l_prev = hoppers_prev / n_leaves_prev)
+
+
+ggplot(hoppers2, aes(h_per_l - h_per_l_prev)) + geom_histogram()
+
+Q_temp2 <-
+  hoppers2 %>% 
+  select(starts_with("temp"), -temp_at_count, -temp_max, -temp_min) %>% 
+  as.matrix()
+
+Q_precip2 <-
+  hoppers2 %>%
+  select(starts_with("precip")) %>% 
+  as.matrix()
+
+L2 <- matrix(0:(ncol(Q_temp2)-1), nrow(Q_temp2), ncol(Q_temp2), byrow = TRUE)
+```
+
+```{r eval=FALSE}
+m_offsets_temp <- 
+  gam(hoppers ~
+        s(Q_temp2, L2,
+          bs = "cb",
+          k = c(5, 7),
+          xt = list(bs = "cr")
+        ) +
+        s(counter, bs = "re") + #no difference with random vs. fixed
+        s(interharvest_id, bs = "re") +
+        s(plant, bs = "re"),
+      family = poisson(),
+      offset = log(n_leaves) + log(hoppers_prev) - log(n_leaves_prev),
+      data = hoppers2,
+      method = "REML")
+beepr::beep(3)
+```
+
+Ah, nevermind.  Can't do this because there are a lot of zeroes in the data.  Can't calculate a rate like this.  buhhh..
+
+But I *can* model algebraic growth rates as a function of temperature, etc.
+
+```{r}
+m_rate <- 
+  gam(h_per_l - h_per_l_prev ~ #change in hoppers per leaf from the previous day
+        # s(Q_precip2, L2,
+        #   bs = "cb",
+        #   k = c(5, 7),
+        #   xt = list(bs = "cr")
+        # ) +
+        s(Q_temp2, L2,
+          bs = "cb",
+          k = c(5,7),
+          xt = list(bs = "cr")) +
+        s(day, bs = "cs") +
+        s(day_post, bs = "cs") +
+        s(counter, bs = "re") + #no difference with random vs. fixed
+        s(interharvest_id, bs = "re") +
+        s(plant, bs = "re"),
+      family = gaussian(),
+      data = hoppers2,
+      method = "REML")
+gam.check(m_rate)
+# concurvity(m_rate)
+anova.gam(m_rate)
+```
+
+The growth *rate* doesn't seem to depend on anything (other than who counted leafhoppers *sigh*).
 
 # Temperature
 
@@ -209,7 +321,7 @@ Significant effect of plant (parametric factor), temperature, precip, days post 
 ### Plot regular smooths
 
 ```{r}
-plot(m_hopper_temp, pages = 1, residuals = FALSE)
+plot.gam(m_hopper_temp, pages = 1, residuals = FALSE, all.terms = TRUE)
 ```
 
 ### Partial effects plot for cross-basis function
@@ -300,7 +412,7 @@ anova.gam(m_hopper_precip)
 significant effect of precip, but not of date.
 
 ```{r}
-plot(m_hopper_precip)
+plot(m_hopper_precip, all.terms = TRUE)
 ```
 
 
@@ -348,6 +460,12 @@ for(i in 1:ncol(Q_precip_new)) {
       )
     )
 }
+
+which(resp_p == min(resp_p), arr.ind = TRUE)
+resp_p[1,16]
+
+which(resp_p == max(resp_p), arr.ind = TRUE)
+resp_p[836, 2, drop = FALSE]
 ```
 
 #### Make the plot
