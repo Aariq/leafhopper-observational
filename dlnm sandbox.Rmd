@@ -1,0 +1,126 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+Test to see if cross-basis functions with same lag dimension are always concurve (have concurvity?)
+
+```{r}
+library(tidyverse)
+library(dlnm)
+library(mgcv)
+library(holodeck)
+```
+
+# Simulate data
+
+```{r}
+lag_func_generator <- function(lags){
+  lag_names <- glue::glue("lag_{seq(length(lags))}")
+  lag_functions <- character(length(lag_names)) %>% set_names(lag_names)
+  for(i in 1:length(lag_functions)) {
+    if(lags[i] < 0){
+      lag_functions[i] <- glue::glue("dplyr::lead(., {lags[i]*-1})")
+    } else {
+      lag_functions[i] <- glue::glue("dplyr::lag(., {lags[i]})")
+    }
+  }
+  return(lag_functions)
+}
+
+
+df <-
+  sim_covar(n_obs = 1000, n_vars = 2, var = 1, cov = 0.6) %>% 
+  rename(response = V1, pred1 = V2) %>% 
+  mutate(pred2 = rnorm(n())) %>% 
+  mutate_at(vars(pred1, pred2), funs_(lag_func_generator(-3:6))) %>% #effect should be at 3 days
+  select(response, starts_with("pred1_"), starts_with("pred2_")) %>% 
+  filter(!is.na(pred1_lag_10) & !is.na(pred1_lag_1))
+
+df
+```
+
+
+# Make matrices
+
+```{r}
+P1 <-
+  df %>%
+  select(starts_with("pred1")) %>% 
+  as.matrix()
+
+P2 <- 
+  df %>% 
+  select(starts_with("pred2")) %>% 
+  as.matrix()
+
+L <- matrix(1:(ncol(P1)), nrow(P1), ncol(P1), byrow = TRUE)
+```
+
+# Do GAM
+
+```{r}
+m1 <- gam(response ~ s(P1) + s(P2), data = df)
+concurvity(m1)
+```
+
+```{r}
+m2 <- gam(response ~ s(P1, L, bs = "cb") + s(P2, L, bs = "cb"), data = df)
+concurvity(m2)
+```
+
+Ok, increased concurvity, but not DRASTICALLY increased. So it's not just because of the lag dimension
+
+```{r}
+gam.check(m1)
+gam.check(m2)
+```
+
+
+Roll your own predict thingie
+
+```{r}
+P1_new <- P1 %>% as_tibble() %>% summarize_all(mean) %>% as.matrix()
+P2_new <- P2 %>% as_tibble() %>% summarize_all(mean) %>% as.matrix()
+L_new <- L[1, ,drop = FALSE]
+
+
+predict(m2, newdata = list(P1 = P1_new, P2 = P2_new, L = L_new))
+```
+
+Ok, so I know how to predict an "average" response.  I want to do this but vary P1 only, I guess?
+
+```{r}
+testvals <- seq(min(P1), max(P1), 0.02)
+# testvals <- seq(-3.2, 3, 0.1)
+resp <- array(dim = c(length(testvals), ncol(P1_new)))
+
+for(i in 1:ncol(P1_new)){
+  for(j in 1:length(testvals)) {
+    P1_i <- P1_new
+    P1_i[1, i] <- testvals[j]
+    resp[j, i] <- predict(m2, newdata = list(P1 = P1_i, P2 = P2_new, L = L_new))
+  }
+}
+rownames(resp) <- testvals
+View(resp)
+```
+
+# Compare results
+```{r}
+pred <- crosspred("P1", m2, cen= -0.2)
+
+plot.crosspred(pred, ptype = "contour")
+```
+
+```{r}
+library(colorspace)
+resp %>% 
+  as_tibble(rownames = "x") %>% 
+  pivot_longer(cols = starts_with("V"), names_to = "lag", names_prefix = "V", values_to = "fitted") %>% 
+  mutate(lag = as.double(lag), x = as.double(x)) %>% 
+  ggplot(aes(x = x, y = lag, z = fitted, fill = fitted)) +
+  # geom_contour(binwidth = 0.1) +
+  geom_raster(interpolate = TRUE) +
+  scale_fill_continuous_diverging() + theme_minimal()
+```
+
