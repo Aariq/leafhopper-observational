@@ -255,12 +255,33 @@ Significant effects of lagged temperature, days post harvest, stem diameter, and
 ```{r echo=FALSE}
 # plot(m_shoot_temp, residuals = TRUE, rug = FALSE, ylim = c(-1, 1))
 # png(here("figs", "shoot_days_post.png"))
-plot(m_shoot_temp, select = 2, xlab = "days post harvest", seWithMean = TRUE, shade = TRUE, shift = coef(m_shoot_temp)[1])
+shoot_pd<- plot(m_shoot_temp, select = 2, xlab = "days post harvest", seWithMean = TRUE, shade = TRUE, shift = coef(m_shoot_temp)[1])
 # dev.off()
+dph <- shoot_pd[[2]]
+
+tibble(x = dph$x, se = dph$se, y = dph$fit + coef(m_shoot_temp)[1]) %>% 
+  ggplot(aes(x, y)) + 
+  geom_line() +
+  geom_ribbon(aes(ymin = y-se, ymax = y+se), alpha = 0.2) +
+  geom_rug(aes(x = raw, y =y), data = tibble(raw = dph$raw, y = 0), sides = "b") +
+  scale_y_continuous("Shoot growth (cm/day)", limits = c(0,0.5)) +
+  scale_x_continuous("Days post harvest") +
+  theme_bw()
 
 # png(here("figs", "shoot_diameter.png"))
-plot.gam(m_shoot_temp, select = 3, xlab = "shoot diameter (mm)", seWithMean = TRUE, shade = TRUE, shift = coef(m_shoot_temp)[1])
+plot.gam(m_shoot_temp, select = 3, xlab = "shoot diameter (mm)", ylab = "Shoot growth (cm/day)", seWithMean = TRUE, shade = TRUE, shift = coef(m_shoot_temp)[1])
 # dev.off()
+
+dia <- shoot_pd[[3]]
+tibble(x = dia$x, se = dia$se, y = dia$fit + coef(m_shoot_temp)[1]) %>% 
+  ggplot(aes(x, y)) + 
+  geom_line() +
+  geom_ribbon(aes(ymin = y-se, ymax = y+se), alpha = 0.2) +
+  geom_rug(aes(x = raw, y =y), data = tibble(raw = dia$raw, y = 0),
+           sides = "b", alpha = 0.1) +
+  scale_y_continuous("Shoot growth (cm/day)", limits = c(0,0.5)) +
+  scale_x_continuous("Diameter (mm)") +
+  theme_bw()
 ```
 
 Shoots with larger diameters grow faster.  Shoot growth rates vary through time in a more complex manner with the fastest growth happening about 10 days post harvest and the slowest growth around 25 days post harvest.
@@ -305,6 +326,12 @@ for(i in 1:ncol(Q_temp_new)) {
       )
     )
 }
+
+which(resp_t == min(resp_t), arr.ind = TRUE)
+resp_t[1,1]
+
+which(resp_t == max(resp_t), arr.ind = TRUE)
+resp_t[73,1]
 ```
 
 #### Make the plot
