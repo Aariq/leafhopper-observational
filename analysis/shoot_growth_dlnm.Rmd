@@ -357,18 +357,27 @@ save_plot(here("figs", "shoot_temp_contour.png"), shoot_temp_contour)
 ```
 ```{r}
 library(patchwork)
-(dph_plot / dia_plot) | shoot_temp_contour 
 
 layout <-
 "
-AAACCCCCC
-AAACCCCCC
-BBBCCCCCC
-BBBCCCCCC
+AABB
+AABB
+CCCC
+CCCC
+CCCC
+CCCC
 "
 
-dph_plot + dia_plot + shoot_temp_contour +  plot_layout(design = layout)
+temp_multi <-
+  dph_plot +
+  dia_plot +
+  shoot_temp_contour +
+  plot_layout(design = layout) +
+  plot_annotation(tag_levels = "A") 
 
+save_plot(here("figs", "shoot_temp_multi.png"), 
+          temp_multi,
+          ncol = 1, base_height = 6, base_asp = 1.1)
 ```
 
 # Precip
@@ -379,6 +388,35 @@ anova.gam(m_shoot_precip)
 
 ```{r}
 plot.gam(m_shoot_precip, pages = 1)
+```
+```{r}
+# png(here("figs", "shoot_diameter.png"))
+plot.gam(m_shoot_precip, seWithMean = TRUE, shift = coef(m_shoot_precip)[1]) -> shoot_pd
+# dev.off()
+
+dia <- shoot_pd[[3]]
+dia_plot <- 
+  tibble(x = dia$x, se = dia$se, y = dia$fit + coef(m_shoot_precip)[1]) %>% 
+  ggplot(aes(x, y)) + 
+  geom_line() +
+  geom_ribbon(aes(ymin = y-se, ymax = y+se), alpha = 0.2) +
+  geom_rug(aes(x = raw, y =y), data = tibble(raw = dia$raw, y = 0),
+           sides = "b", alpha = 0.1) +
+  scale_y_continuous("Shoot growth (cm/day)", limits = c(0,0.5)) +
+  scale_x_continuous("Diameter (mm)") +
+  theme_bw()
+
+dph <- shoot_pd[[2]]
+dph_plot <- 
+  tibble(x = dph$x, se = dph$se, y = dph$fit + coef(m_shoot_precip)[1]) %>% 
+  ggplot(aes(x, y)) + 
+  geom_line() +
+  geom_ribbon(aes(ymin = y-se, ymax = y+se), alpha = 0.2) +
+  geom_rug(aes(x = raw, y =y), data = tibble(raw = dph$raw, y = 0),
+           sides = "b", alpha = 0.1) +
+  scale_y_continuous("Shoot growth (cm/day)", limits = c(0,0.5)) +
+  scale_x_continuous("Days post harvest") +
+  theme_bw()
 ```
 
 ### Partial effects plot for cross-basis function
@@ -421,6 +459,12 @@ for(i in 1:ncol(Q_precip_new)) {
       )
     )
 }
+
+which(resp_p == min(resp_p), arr.ind = TRUE)
+resp_p[836, 1, drop = FALSE]
+
+which(resp_p == max(resp_p), arr.ind = TRUE)
+resp_p[280, 9, drop = FALSE]
 ```
 
 #### Make the plot
@@ -441,5 +485,21 @@ shoot_precip_contour <-
   scale_x_continuous("Precipitation (mm)", expand = c(0,0)) +
   theme(text = element_text(size = 14))
 save_plot(here("figs", "shoot_precip_contour.png"), shoot_precip_contour)
+```
+
+
+Multipanel plot:
+
+```{r}
+precip_multi <-
+  dph_plot +
+  dia_plot +
+  shoot_precip_contour +
+  plot_layout(design = layout) +
+  plot_annotation(tag_levels = "A") 
+
+save_plot(here("figs", "shoot_precip_multi.png"), 
+          precip_multi,
+          ncol = 1, base_height = 6, base_asp = 1.1)
 ```
 

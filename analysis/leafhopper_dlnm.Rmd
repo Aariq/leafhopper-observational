@@ -14,6 +14,7 @@ output:
 
 - Tidy up analysis
 - export figures
+- move wrangling out of this doc
 
 
 ```{r setup, include=FALSE}
@@ -31,6 +32,7 @@ library(mgcv)
 library(dlnm)
 library(colorspace)
 library(cowplot)
+library(bbmle)
 
 conflict_prefer("filter", "dplyr")
 conflict_prefer("here", "here")
@@ -39,6 +41,7 @@ conflict_prefer("select", "dplyr")
 ```
 
 # Functions
+
 ```{r}
 mean_matrix <- function(m, nrow){
   m_new <- m %>% 
@@ -93,46 +96,7 @@ L <- matrix(0:(ncol(Q_temp)-1), nrow(Q_temp), ncol(Q_temp), byrow = TRUE)
 
 # Build the GAMs
 
-
-```{r}
-m_hopper <- 
-  gam(hoppers ~
-        s(Q_temp, L,
-          bs = "cb",
-          k = c(5, 7),
-          xt = list(bs = "cr")
-        ) +
-        s(Q_precip, L,
-          bs = "cb",
-          k = c(5, 7),
-          xt = list(bs = "cr")
-        ) +
-        # s(day, bs = "cs") +
-        s(day_post, bs = "cs") +
-        s(counter, bs = "re") + #no difference with random vs. fixed
-        s(interharvest_id, bs = "re") +
-        s(plant, bs = "re"),
-      family = poisson(),
-      offset = log(n_leaves),
-      data = hoppers,
-      # gamma = 1.2, #values above 1 make smoother.  Borrowed from Teller et al.
-      method = "REML")
-beepr::beep(3)
-```
-
-```{r}
-gam.check(m_hopper)
-```
-```{r}
-concurvity(m_hopper)
-# concurvity(m_hopper, full = FALSE)
-
-ggplot(hoppers, aes(x = date, y = temp_mean)) +
-  geom_jitter(alpha = 0.3)
-```
-
 Temp and precip are highly concurve, so can't trust p-values. I'll do the models separately.
-
 
 ```{r}
 m_hopper_temp <- 
@@ -191,8 +155,7 @@ beepr::beep(3)
 anova.gam(m_hopper_date)
 anova.gam(m_hopper_precip)
 anova.gam(m_hopper_temp)
-AIC(m_hopper_temp, m_hopper_precip)
-bbmle::ICtab(m_hopper_temp, m_hopper_precip, m_hopper_date)
+ICtab(m_hopper_temp, m_hopper_precip, m_hopper_date)
 ```
 
 Precip model wins.
@@ -217,15 +180,15 @@ $$
 ```{r}
 hoppers2 <- hoppers %>% 
   group_by(plant) %>% 
-  mutate(hoppers_prev = lag(hoppers),
-         n_leaves_prev = lag(n_leaves)) %>% 
-  filter(!is.na(n_leaves_prev)) %>% 
+  mutate(hoppers_next = lead(hoppers),
+         n_leaves_next = lead(n_leaves)) %>% 
+  filter(!is.na(n_leaves_next)) %>% 
   ungroup() %>% 
   mutate(h_per_l = hoppers / n_leaves,
-         h_per_l_prev = hoppers_prev / n_leaves_prev)
+         h_per_l_next = hoppers_next / n_leaves_next)
 
 
-ggplot(hoppers2, aes(h_per_l - h_per_l_prev)) + geom_histogram()
+# ggplot(hoppers2, aes(h_per_l_next - h_per_l)) + geom_histogram()
 
 Q_temp2 <-
   hoppers2 %>% 
@@ -264,16 +227,16 @@ But I *can* model algebraic growth rates as a function of temperature, etc.
 
 ```{r}
 m_rate <- 
-  gam(h_per_l - h_per_l_prev ~ #change in hoppers per leaf from the previous day
-        # s(Q_precip2, L2,
-        #   bs = "cb",
-        #   k = c(5, 7),
-        #   xt = list(bs = "cr")
-        # ) +
-        s(Q_temp2, L2,
+  gam(h_per_l_next - h_per_l ~ #change in hoppers per leaf from the previous day
+        s(Q_precip2, L2,
           bs = "cb",
-          k = c(5,7),
-          xt = list(bs = "cr")) +
+          k = c(5, 7),
+          xt = list(bs = "cr")
+        ) +
+        # s(Q_temp2, L2,
+        #   bs = "cb",
+        #   k = c(5,7),
+        #   xt = list(bs = "cr")) +
         s(day, bs = "cs") +
         s(day_post, bs = "cs") +
         s(counter, bs = "re") + #no difference with random vs. fixed
@@ -368,6 +331,12 @@ for(i in 1:ncol(Q_temp_new)) {
       )
     )
 }
+
+which(resp_t == max(resp_t), arr.ind = TRUE)
+resp_t[1, 10, drop = FALSE]
+
+which(resp_t == min(resp_t), arr.ind = TRUE)
+resp_t[112, 16, drop = FALSE]
 ```
 
 #### Make the plot
