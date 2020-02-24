@@ -342,7 +342,8 @@ resp_t[73,1]
 st_pd <-
   resp_t %>% 
   as_tibble(rownames = "x") %>% 
-  pivot_longer(cols = starts_with("V"), names_to = "lag", names_prefix = "V", values_to = "fitted") %>% 
+  pivot_longer(cols = starts_with("V"),
+               names_to = "lag", names_prefix = "V", values_to = "fitted") %>% 
   mutate(lag = as.double(lag) - 1, x = as.double(x)) 
 
 shoot_temp_contour <-
@@ -474,7 +475,7 @@ sp_pd <-
   resp_p %>% 
   as_tibble(rownames = "x") %>% 
   pivot_longer(cols = starts_with("V"), names_to = "lag", names_prefix = "V", values_to = "fitted") %>% 
-  mutate(lag = as.double(lag), x = as.double(x)) 
+  mutate(lag = as.double(lag)-1, x = as.double(x)) 
 
 shoot_precip_contour <-
   ggplot(sp_pd, aes(x = x, y = lag, z = fitted, fill = fitted)) +
