@@ -1,0 +1,74 @@
+---
+title: "EDA and descriptive figures"
+author: "Eric R. Scott"
+date: "2022-03-26"
+output: 
+  html_notebook: 
+    highlight: kate
+    theme: yeti
+    toc: yes
+    toc_float: yes
+    number_sections: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+*Last compiled: `r Sys.Date()`*
+
+```{r packages, include=FALSE}
+library(tidyverse)
+library(here)
+```
+
+# Purpose
+
+Make a plot that shows leafhopper densities over time with harvests and maybe weather.
+
+# Load Data
+
+```{r data, echo=TRUE}
+df <- read_rds(here("data", "cleaned", "hopper-weather.rds"))
+```
+
+```{r}
+df %>% 
+  group_by(field, interharvest.no) %>% 
+  summarize(length = last(date) - first(date),
+            mean_temp = mean(temp_mean),
+            mean_precip = mean(precip_mm),
+            mean_density = mean(hoppers/n_leaves))
+
+df %>% 
+    summarize(length = last(date) - first(date),
+            mean_temp = mean(temp_mean),
+            mean_precip = mean(precip_mm),
+            max_precip = max(precip_mm),
+            mean_density = mean(hoppers/n_leaves))
+  
+```
+```{r}
+ggplot(df, aes(precip_mm)) + geom_histogram()
+```
+
+
+Summarize for plotting
+
+```{r}
+plotdf <- df %>% 
+  group_by(date, field) %>% 
+  summarize(density = sum(hoppers / n_leaves))
+```
+
+
+# Plot
+
+add lines/colors for harvests?
+add panel for temp
+add panel for precip
+
+```{r}
+ggplot(plotdf, aes(x = date, y = density, color = field)) + geom_line()
+```
+
