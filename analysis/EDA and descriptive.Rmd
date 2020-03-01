@@ -20,6 +20,8 @@ knitr::opts_chunk$set(echo = TRUE)
 ```{r packages, include=FALSE}
 library(tidyverse)
 library(here)
+library(patchwork)
+library(cowplot)
 ```
 
 # Purpose
@@ -38,6 +40,8 @@ df %>%
   summarize(length = last(date) - first(date),
             mean_temp = mean(temp_mean),
             mean_precip = mean(precip_mm),
+            num_rainy = sum(precip_mm >0)/n(),
+            median_precip = median(precip_mm),
             mean_density = mean(hoppers/n_leaves))
 
 df %>% 
@@ -58,7 +62,10 @@ Summarize for plotting
 ```{r}
 plotdf <- df %>% 
   group_by(date, field) %>% 
-  summarize(density = sum(hoppers / n_leaves))
+  summarize(density = mean(hoppers / n_leaves),
+            interharvest.no = first(interharvest.no)) %>% 
+  mutate(harvest = paste0(field, interharvest.no)) %>% 
+  filter(harvest != "A4")
 ```
 
 
@@ -69,6 +76,45 @@ add panel for temp
 add panel for precip
 
 ```{r}
-ggplot(plotdf, aes(x = date, y = density, color = field)) + geom_line()
+densityplot <-
+  ggplot(plotdf, aes(x = date, y = density, group = field, color = harvest)) + 
+  geom_line() +
+  theme_bw() +
+  labs(x = "Date", y = "Leafhopper Density (insects/leaf)", color = "Harvest") +
+  scale_x_date(date_breaks = "1 week", labels = label_date(format = "%b %d"))
+```
+
+```{r}
+weatherdf <- 
+  df %>% group_by(date) %>% 
+  summarize(precip_mm = first(precip_mm),
+            temp_mean = first(temp_mean),
+            temp_min = first(temp_min),
+            temp_max = first(temp_max))
+
+precip_plot <- 
+  ggplot(weatherdf, aes(x = date, y = precip_mm)) +
+  geom_col(fill = "darkblue") +
+  theme_bw() +
+  scale_y_continuous("Precipitation (mm)") +
+  scale_x_date("Date", date_breaks = "1 week", labels = label_date(format = "%b %d")) +
+  theme(axis.text.x.bottom = element_blank(),
+        axis.title.x.bottom = element_blank())
+
+temp_plot <-
+  ggplot(weatherdf, aes(x = date)) +
+  geom_line(aes(y = temp_mean), color = "red") +
+  geom_line(aes(y = temp_min), color = "red", lty = "dashed") +
+  geom_line(aes(y = temp_max), color = "red", lty = "dashed") +
+  theme_bw() +
+  scale_y_continuous("Temperature (ºC)") +
+  scale_x_date("Date", date_breaks = "1 week", labels = label_date(format = "%b %d")) +
+  theme(axis.text.x.bottom = element_blank(),
+        axis.title.x.bottom = element_blank())
+```
+```{r}
+plot1 <- precip_plot/temp_plot/densityplot + plot_layout(heights = c(2,2,4))
+plot1
+save_plot(here("figs", "exploratory.png"), plot1, base_height = 7)
 ```
 
