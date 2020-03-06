@@ -295,7 +295,9 @@ Shoots with larger diameters grow faster.  Shoot growth rates vary through time 
 ```{r}
 testvals <- seq(min(Q_temp), max(Q_temp), 0.1)
 
-Q_temp_new <- mean_matrix(Q_temp, length(testvals))
+# Q_temp_new <- mean_matrix(Q_temp, length(testvals))
+
+Q_temp_new <- matrix(mean(shootdf$temp_mean), nrow = length(testvals), ncol = ncol(Q_temp))
 L_new <- mean_matrix(L, length(testvals))
 day_post_new <- rep(mean(shootdf$day_post), length(testvals))
 diameter_new <- rep(mean(shootdf$diameter), length(testvals))
@@ -334,7 +336,7 @@ which(resp_t == min(resp_t), arr.ind = TRUE)
 resp_t[1,1]
 
 which(resp_t == max(resp_t), arr.ind = TRUE)
-resp_t[73,1]
+resp_t[54,16]
 ```
 
 #### Make the plot
@@ -347,16 +349,44 @@ st_pd <-
                names_to = "lag", names_prefix = "V", values_to = "fitted") %>% 
   mutate(lag = as.double(lag) - 1, x = as.double(x)) 
 
-shoot_temp_contour <-
+shoot_temp_raster <-
   ggplot(st_pd, aes(x = x, y = lag, z = fitted, fill = fitted)) +
   geom_raster(interpolate = TRUE) +
   geom_contour(color = "black", alpha = 0.2) +
   scale_fill_viridis_c("Shoot growth \n(cm/day)", option = "D") + 
   scale_y_continuous("Lag (days)", expand = c(0,0)) + 
   scale_x_continuous("Temperature (ºC)", expand = c(0,0)) +
+  theme(text = element_text(size = 14)) +
+  expand_limits(fill = c(0.25, 0.45))
+save_plot(here("figs", "shoot_temp_raster.png"), shoot_temp_raster)
+```
+
+## Try new geom_countour_filled
+
+```{r}
+shoot_temp_contour <-
+  ggplot(st_pd, aes(x = x, y = lag, z = fitted, fill = fitted)) +
+  geom_contour_filled(aes(fill = stat(level)), breaks = seq(0.25, 0.45, by = 0.02))  +
+  scale_fill_viridis_d("Shoot growth \n(cm/day)", option = "D", drop = FALSE) +
+  scale_y_continuous("Lag (days)", expand = c(0,0)) + 
+  scale_x_continuous("Temperature (ºC)", expand = c(0,0)) +
+  guides(fill = guide_colorsteps(show.limits = TRUE, barheight = unit(0.2, "npc"))) +
   theme(text = element_text(size = 14))
 save_plot(here("figs", "shoot_temp_contour.png"), shoot_temp_contour)
+
+
+shoot_temp_raster_magma <- shoot_temp_raster + scale_fill_viridis_c("Shoot growth \n(cm/day)", option = "A")
+shoot_temp_contour_magma <- shoot_temp_contour + scale_fill_viridis_d("Shoot growth \n(cm/day)", option = "A", drop = FALSE)
+
+shoot_temp_colortest <-
+  shoot_temp_raster + 
+  shoot_temp_contour + 
+  shoot_temp_raster_magma +
+  shoot_temp_contour_magma
+save_plot(here("shoot_temp_test.png"), shoot_temp_colortest, nrow = 2, ncol = 2)
 ```
+
+
 ```{r}
 library(patchwork)
 
@@ -428,7 +458,9 @@ dph_plot <-
 ```{r}
 testvals <- seq(min(Q_precip), max(Q_precip), 0.1)
 
-Q_precip_new <- mean_matrix(Q_precip, length(testvals))
+# Q_precip_new <- mean_matrix(Q_precip, length(testvals))
+Q_precip_new<- matrix(mean(shootdf$precip_mm), nrow = length(testvals), ncol = ncol(Q_precip))
+
 L_new <- mean_matrix(L, length(testvals))
 day_post_new <- rep(mean(shootdf$day_post), length(testvals))
 diameter_new <- rep(mean(shootdf$diameter), length(testvals))
@@ -467,7 +499,7 @@ which(resp_p == min(resp_p), arr.ind = TRUE)
 resp_p[836, 1, drop = FALSE]
 
 which(resp_p == max(resp_p), arr.ind = TRUE)
-resp_p[280, 9, drop = FALSE]
+resp_p[151, 4, drop = FALSE]
 ```
 
 #### Make the plot
@@ -479,15 +511,54 @@ sp_pd <-
   pivot_longer(cols = starts_with("V"), names_to = "lag", names_prefix = "V", values_to = "fitted") %>% 
   mutate(lag = as.double(lag)-1, x = as.double(x)) 
 
-shoot_precip_contour <-
+shoot_precip_raster <-
   ggplot(sp_pd, aes(x = x, y = lag, z = fitted, fill = fitted)) +
   geom_raster(interpolate = TRUE) +
   geom_contour(color = "black", alpha = 0.2) +
   scale_fill_viridis_c("Shoot growth \n(cm/day)", option = "D") + 
   scale_y_continuous("Lag (days)", expand = c(0,0)) + 
   scale_x_continuous("Precipitation (mm)", expand = c(0,0)) +
+  theme(text = element_text(size = 14)) +
+  expand_limits(fill = c(0.25, 0.45))
+save_plot(here("figs", "shoot_precip_raster.png"), shoot_precip_raster)
+```
+
+## Try new countour plot
+
+```{r}
+shoot_precip_contour <-
+  ggplot(sp_pd, aes(x = x, y = lag, z = fitted, fill = fitted)) +
+  geom_contour_filled(aes(fill = stat(level)), breaks = seq(0.25, 0.45, by = 0.02))  +
+  scale_fill_viridis_d("Shoot growth \n(cm/day)", option = "D", drop = FALSE) +
+  scale_y_continuous("Lag (days)", expand = c(0,0)) + 
+  scale_x_continuous("Precipitation (mm)", expand = c(0,0)) +
+  guides(fill = guide_colorsteps(show.limits = TRUE, barheight = unit(0.2, "npc"))) +
   theme(text = element_text(size = 14))
 save_plot(here("figs", "shoot_precip_contour.png"), shoot_precip_contour)
+
+
+
+shoot_precip_raster_magma <- shoot_precip_raster + scale_fill_viridis_c("Shoot growth \n(cm/day)", option = "A")
+shoot_precip_contour_magma <- shoot_precip_contour + scale_fill_viridis_d("Shoot growth \n(cm/day)", option = "A", drop = FALSE)
+shoot_precip_colortest <-
+  shoot_precip_raster + 
+  shoot_precip_contour + 
+  shoot_precip_raster_magma +
+  shoot_precip_contour_magma
+
+save_plot(here("shoot_precip_test.png"), shoot_precip_colortest, nrow = 2, ncol = 2)
+```
+
+test of all
+
+```{r}
+viridis_pal <- (shoot_precip_raster + shoot_temp_raster + plot_layout(guides = "collect"))
+magma_pal <- (shoot_precip_raster_magma + shoot_temp_raster_magma + plot_layout(guides = "collect"))
+viridis_pal_c <- (shoot_precip_contour + shoot_temp_contour + plot_layout(guides = "collect"))
+magma_pal_c <- (shoot_precip_contour_magma + shoot_temp_contour_magma + plot_layout(guides = "collect"))
+colortest <- viridis_pal /magma_pal / viridis_pal_c / magma_pal_c
+
+save_plot(here("colortest.png"), colortest, ncol = 2, nrow = 4)
 ```
 
 

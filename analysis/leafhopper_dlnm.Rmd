@@ -376,6 +376,7 @@ concurvity(m_hopper_precip)
 
 ```{r}
 anova.gam(m_hopper_precip)
+summary(m_hopper_precip)
 ```
 
 significant effect of precip, but not of date.
