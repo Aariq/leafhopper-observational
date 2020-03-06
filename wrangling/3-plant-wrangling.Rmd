@@ -347,7 +347,12 @@ shootdf <- shoot.data7 %>%
   select(
     date,
     shoot_id,
+    field,
+    plant,
+    shoot,
+    interharvest.no,
     interharvest_id,
+    shoot_height,
     growth,
     diameter,
     day_post,

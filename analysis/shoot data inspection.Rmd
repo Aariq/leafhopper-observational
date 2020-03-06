@@ -61,12 +61,7 @@ shoot.data
 ```{r}
 shoot.data2 <- 
   shoot.data %>% 
-  mutate(plant_id = paste0(field, plant)) %>% 
-  group_by(field, interharvest.no) %>% 
-  mutate(day_post = day - first(day),
-         temp_mean_lag = lag(temp_mean),
-         precip_lag = lag(precip_mm)) %>% 
-  ungroup()
+  mutate(plant_id = paste0(field, plant))
 ```
 
 
@@ -99,6 +94,20 @@ plotlist <-
 
 map(plotlist, ggplotly)
 ```
+plot a single harvest:
+
+```{r}
+ggplot(shoot_growth_list[[1]], aes(x = date, y = shoot_height, color = shoot)) +
+  geom_line() +
+  facet_wrap(~plant, labeller = label_both) +
+  theme_bw() +
+  labs(title = "Field A, First Harvest", y = "Shoot Height (cm)", x = "Date", color = "ShootID") +
+  theme(text = element_text(size = 14),
+        axis.text.x = element_text(angle = 70, hjust = 1),
+        legend.position = "none")
+ggsave("shoots.png")
+```
+
 
 There are some obvious measurement errors.  Shoots can't shrink then grow.  I checked and these are not data entry errors.
 
