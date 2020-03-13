@@ -29,6 +29,8 @@ library(scales)
 
 Make a plot that shows leafhopper densities over time with harvests and maybe weather.
 
+Also a supplementary plot showing concurvity of temp and precip. (I guess I do a geom_smooth()?)
+
 # Load Data
 
 ```{r data, echo=TRUE}
@@ -80,10 +82,11 @@ add panel for precip
 ```{r}
 densityplot <-
   ggplot(plotdf, aes(x = date, y = density, group = field, color = harvest)) + 
-  geom_line() +
+  geom_line(size = 1, lineend = "round") +
   theme_bw() +
   labs(x = "Date", y = "Leafhopper Density (insects/leaf)", color = "Harvest") +
-  scale_x_date(date_breaks = "1 week", labels = label_date(format = "%b %d"))
+  scale_x_date(date_breaks = "3 days", labels = label_date(format = "%b %d")) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
 ```
 
 
@@ -110,7 +113,7 @@ precip_plot <-
   geom_col(fill = "darkblue") +
   theme_bw() +
   scale_y_continuous("Precipitation (mm)") +
-  scale_x_date("Date", date_breaks = "1 week", labels = label_date(format = "%b %d")) +
+  scale_x_date(date_breaks = "3 days", labels = label_date(format = "%b %d")) +
   theme(axis.text.x.bottom = element_blank(),
         axis.title.x.bottom = element_blank())
 
@@ -121,13 +124,57 @@ temp_plot <-
   geom_line(aes(y = temp_max), color = "red", lty = "dashed") +
   theme_bw() +
   scale_y_continuous("Temperature (ºC)") +
-  scale_x_date("Date", date_breaks = "1 week", labels = label_date(format = "%b %d")) +
+  scale_x_date(date_breaks = "3 days", labels = label_date(format = "%b %d")) +
   theme(axis.text.x.bottom = element_blank(),
         axis.title.x.bottom = element_blank())
 ```
 ```{r}
-plot1 <- precip_plot/temp_plot/densityplot + plot_layout(heights = c(2,2,4))
+plot1 <- precip_plot/temp_plot/densityplot + plot_layout(heights = c(2,2,4)) + plot_annotation(tag_levels = "A")
 plot1
-save_plot(here("figs", "exploratory.png"), plot1, base_height = 7)
+save_plot(here("figs", "exploratory.png"), plot1, base_height = 7, base_aspect_ratio = 1.25)
 ```
+
+
+# Correlation / concurvity
+
+Concurvity estimated from GAM with both temp and precip worst was 0.99
+
+```{r}
+weatherdf
+concurvity_p <- 
+  ggplot(weatherdf, aes(y = temp_mean, x = precip_mm)) + 
+  geom_point(alpha = 0.5) + 
+  geom_smooth(method = "gam", level = 0.95) +
+  labs(x = "Precipitation (mm)", y = "Mean Temperature (ºC)") +
+  theme_bw()
+save_plot(here("figs", "plotS1.png"), concurvity_p)
+```
+
+```{r}
+library(mgcv)
+test <-gam(temp_mean ~ s(precip_mm, bs = "cs"), data = weatherdf)
+gam.check(test)
+anova.gam(test)
+plot.gam(test,residuals = TRUE, cex = 4, shift = coef(test)[1])
+```
+
+not sure why different
+
+# Descriptives
+
+```{r}
+weatherdf %>% 
+  summarize(temp_grandmean = mean(temp_mean),
+            temp_sd = sd(temp_mean),
+            precip_mean = mean(precip_mm),
+            precip_sd = sd(precip_mm),
+            rainy_days_percent = sum(precip_mm >0)/n())
+```
+
+```{r}
+df %>% 
+  summarize(hopper_density = mean(hoppers/n_leaves),
+            hopper_density_sd = sd(hoppers/n_leaves))
+```
+
 
