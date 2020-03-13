@@ -34,22 +34,12 @@ library(dlnm)
 library(glue)
 library(colorspace)
 library(cowplot)
+library(patchwork)
 
 conflict_prefer("filter", "dplyr")
 conflict_prefer("here", "here")
 conflict_prefer("lag", "dplyr")
 conflict_prefer("select", "dplyr")
-```
-
-# Functions
-```{r}
-mean_matrix <- function(m, nrow){
-  m_new <- m %>% 
-    colMeans() %>%
-    matrix(ncol = ncol(m), nrow = nrow, byrow = TRUE)
-  colnames(m_new) <- colnames(m)
-  return(m_new)
-}
 ```
 
 # Goal
@@ -109,6 +99,7 @@ Q_precip <-
 L <- matrix(0:(ncol(Q_temp) - 1), nrow(Q_temp), ncol(Q_temp), byrow = TRUE)
 # head(L)
 ```
+
 ## Build the GAM
 
 ```{r}
@@ -132,7 +123,6 @@ m_shoots <-
       family = scat, #because residuals are very leptokurtic w/ gaussian
       # gamma = 1.2, #values above 1 make smoother.  Borrowed from Teller et al.
       method = "REML")
-beepr::beep(5)
 ```
 
 
@@ -149,49 +139,10 @@ GAM converges, number of knots seems a bit high for temperature and precip, but 
 ```{r eval = FALSE}
 concurvity(m_shoots, full = TRUE)
 ```
+
 This currently errors, but previous versions of the analysis with more constrained relationships between weather and growth showed that both precip and temperature have potential problems with concurvity.
 
 Precip and temp are concurve(?) meaning they might be redundant in the model.  This makes sense as temperature and precip are generally correlated to some extent.
-
-## Significance test
-
-```{r eval = FALSE}
-anova.gam(m_shoots)
-m_shoots$sp
-```
-
-
-Significant effect of, temperature, precip, days post harvest, and diameter on growth.
-
-
-```{r echo=FALSE}
-cen = 22
-# cen = mean(shootdf$temp_mean)
-# cen = NULL
-
-pred_temp <- crosspred("Q_temp", m_shoots, cen = cen)
-pred_temp2 <- crosspred("Q_temp", m_shoots, by = 0.2, bylag = 0.2, cen = cen)
-
-#3D
-plot(pred_temp,
-     ptype = "contour",
-     xlab = "Temperature (C)",
-     ylab = "lag (days)",
-     main = glue("Temperature Effects (center = {cen}ºC)"))
-
-# Overall effect of temp across all 14 days of lag (I think)
-plot(pred_temp2,
-     "overall",
-     ylab = "Relative Growth Rate",
-     xlab = "Temperature (C)",
-     main = "Cumulative Temperature Effects")
-
-plot(pred_temp2,
-     var = 27,
-     xlab = "Lag (days)",
-     ylab = "Relative Growth Rate",
-     main = "Effect of Lag for 27ºC")
-```
 
 
 # Dealing with Concurvity:
@@ -228,7 +179,6 @@ m_shoot_precip <-
       family = scat, #because residuals are very leptokurtic w/ gaussian
       # gamma = 1.2, #values above 1 make smoother.  Borrowed from Teller et al.
       method = "REML")
-beepr::beep(4)
 ```
 
 ```{r}
@@ -250,30 +200,30 @@ Significant effects of lagged temperature, days post harvest, stem diameter, and
 
 ## Predictions and plots
 
-### Regular smooths
+### Regular smooths for covariates
 
-```{r echo=FALSE}
-# plot(m_shoot_temp, residuals = TRUE, rug = FALSE, ylim = c(-1, 1))
-# png(here("figs", "shoot_days_post.png"))
-shoot_pd<- plot(m_shoot_temp, select = 2, xlab = "days post harvest", seWithMean = TRUE, shade = TRUE, shift = coef(m_shoot_temp)[1])
-# dev.off()
+```{r include=FALSE}
+#pull plot data
+shoot_pd <- 
+  plot(m_shoot_temp, seWithMean = TRUE, shift = coef(m_shoot_temp)[1])
+
 dph <- shoot_pd[[2]]
+dia <- shoot_pd[[3]]
+```
 
+```{r}
+# make plots
 dph_plot <-
   tibble(x = dph$x, se = dph$se, y = dph$fit + coef(m_shoot_temp)[1]) %>% 
   ggplot(aes(x, y)) + 
   geom_line() +
   geom_ribbon(aes(ymin = y-se, ymax = y+se), alpha = 0.2) +
   geom_rug(aes(x = raw, y =y), data = tibble(raw = dph$raw, y = 0), sides = "b") +
-  scale_y_continuous("Shoot growth (cm/day)", limits = c(0,0.5)) +
+  scale_y_continuous("Shoot growth (cm/day)", limits = c(0,0.6)) +
   scale_x_continuous("Days post harvest") +
   theme_bw()
 
-# png(here("figs", "shoot_diameter.png"))
-plot.gam(m_shoot_temp, select = 3, xlab = "shoot diameter (mm)", ylab = "Shoot growth (cm/day)", seWithMean = TRUE, shade = TRUE, shift = coef(m_shoot_temp)[1])
-# dev.off()
 
-dia <- shoot_pd[[3]]
 dia_plot <- 
   tibble(x = dia$x, se = dia$se, y = dia$fit + coef(m_shoot_temp)[1]) %>% 
   ggplot(aes(x, y)) + 
@@ -281,9 +231,11 @@ dia_plot <-
   geom_ribbon(aes(ymin = y-se, ymax = y+se), alpha = 0.2) +
   geom_rug(aes(x = raw, y =y), data = tibble(raw = dia$raw, y = 0),
            sides = "b", alpha = 0.1) +
-  scale_y_continuous("Shoot growth (cm/day)", limits = c(0,0.5)) +
+  scale_y_continuous("Shoot growth (cm/day)", limits = c(0,0.6)) +
   scale_x_continuous("Diameter (mm)") +
   theme_bw()
+
+dph_plot + dia_plot
 ```
 
 Shoots with larger diameters grow faster.  Shoot growth rates vary through time in a more complex manner with the fastest growth happening about 10 days post harvest and the slowest growth around 25 days post harvest.
@@ -294,9 +246,6 @@ Shoots with larger diameters grow faster.  Shoot growth rates vary through time 
 
 ```{r}
 testvals <- seq(min(Q_temp), max(Q_temp), 0.1)
-
-# Q_temp_new <- mean_matrix(Q_temp, length(testvals))
-
 Q_temp_new <- matrix(mean(shootdf$temp_mean), nrow = length(testvals), ncol = ncol(Q_temp))
 L_new <- mean_matrix(L, length(testvals))
 day_post_new <- rep(mean(shootdf$day_post), length(testvals))
@@ -341,6 +290,8 @@ resp_t[54,16]
 
 #### Make the plot
 
+Raster version:
+
 ```{r}
 st_pd <-
   resp_t %>% 
@@ -353,7 +304,7 @@ shoot_temp_raster <-
   ggplot(st_pd, aes(x = x, y = lag, z = fitted, fill = fitted)) +
   geom_raster(interpolate = TRUE) +
   geom_contour(color = "black", alpha = 0.2) +
-  scale_fill_viridis_c("Shoot growth \n(cm/day)", option = "D") + 
+  scale_fill_viridis_c("Shoot growth \n(cm/day)", option = "A") + 
   scale_y_continuous("Lag (days)", expand = c(0,0)) + 
   scale_x_continuous("Temperature (ºC)", expand = c(0,0)) +
   theme(text = element_text(size = 14)) +
@@ -361,35 +312,23 @@ shoot_temp_raster <-
 save_plot(here("figs", "shoot_temp_raster.png"), shoot_temp_raster)
 ```
 
-## Try new geom_countour_filled
+Contour version:
 
 ```{r}
 shoot_temp_contour <-
   ggplot(st_pd, aes(x = x, y = lag, z = fitted, fill = fitted)) +
   geom_contour_filled(aes(fill = stat(level)), breaks = seq(0.25, 0.45, by = 0.02))  +
-  scale_fill_viridis_d("Shoot growth \n(cm/day)", option = "D", drop = FALSE) +
+  scale_fill_viridis_d("Shoot growth \n(cm/day)", option = "A", drop = FALSE) +
   scale_y_continuous("Lag (days)", expand = c(0,0)) + 
   scale_x_continuous("Temperature (ºC)", expand = c(0,0)) +
-  guides(fill = guide_colorsteps(show.limits = TRUE, barheight = unit(0.2, "npc"))) +
+  guides(fill = guide_colorsteps(show.limits = TRUE, barheight = unit(0.3, "npc"))) +
   theme(text = element_text(size = 14))
 save_plot(here("figs", "shoot_temp_contour.png"), shoot_temp_contour)
-
-
-shoot_temp_raster_magma <- shoot_temp_raster + scale_fill_viridis_c("Shoot growth \n(cm/day)", option = "A")
-shoot_temp_contour_magma <- shoot_temp_contour + scale_fill_viridis_d("Shoot growth \n(cm/day)", option = "A", drop = FALSE)
-
-shoot_temp_colortest <-
-  shoot_temp_raster + 
-  shoot_temp_contour + 
-  shoot_temp_raster_magma +
-  shoot_temp_contour_magma
-save_plot(here("shoot_temp_test.png"), shoot_temp_colortest, nrow = 2, ncol = 2)
 ```
 
+Multipanel plot:
 
 ```{r}
-library(patchwork)
-
 layout <-
 "
 AABB
@@ -403,7 +342,8 @@ CCCC
 temp_multi <-
   dph_plot +
   dia_plot +
-  shoot_temp_contour +
+  # shoot_temp_contour +
+  shoot_temp_raster +
   plot_layout(design = layout) +
   plot_annotation(tag_levels = "A") 
 
@@ -419,14 +359,17 @@ anova.gam(m_shoot_precip)
 ```
 
 ```{r}
-plot.gam(m_shoot_precip, pages = 1)
-```
-```{r}
-# png(here("figs", "shoot_diameter.png"))
-plot.gam(m_shoot_precip, seWithMean = TRUE, shift = coef(m_shoot_precip)[1]) -> shoot_pd
-# dev.off()
+#get data
+shoot_pd <- plot.gam(m_shoot_precip, seWithMean = TRUE, shift = coef(m_shoot_precip)[1])
 
+dph <- shoot_pd[[2]]
 dia <- shoot_pd[[3]]
+```
+
+NOTE: consider combining with other covariate plots from the temperature model.  E.g. two lines on the same plot.
+
+```{r}
+#make plots 
 dia_plot <- 
   tibble(x = dia$x, se = dia$se, y = dia$fit + coef(m_shoot_precip)[1]) %>% 
   ggplot(aes(x, y)) + 
@@ -434,11 +377,10 @@ dia_plot <-
   geom_ribbon(aes(ymin = y-se, ymax = y+se), alpha = 0.2) +
   geom_rug(aes(x = raw, y =y), data = tibble(raw = dia$raw, y = 0),
            sides = "b", alpha = 0.1) +
-  scale_y_continuous("Shoot growth (cm/day)", limits = c(0,0.5)) +
+  scale_y_continuous("Shoot growth (cm/day)", limits = c(0,0.6)) +
   scale_x_continuous("Diameter (mm)") +
   theme_bw()
 
-dph <- shoot_pd[[2]]
 dph_plot <- 
   tibble(x = dph$x, se = dph$se, y = dph$fit + coef(m_shoot_precip)[1]) %>% 
   ggplot(aes(x, y)) + 
@@ -446,9 +388,11 @@ dph_plot <-
   geom_ribbon(aes(ymin = y-se, ymax = y+se), alpha = 0.2) +
   geom_rug(aes(x = raw, y =y), data = tibble(raw = dph$raw, y = 0),
            sides = "b", alpha = 0.1) +
-  scale_y_continuous("Shoot growth (cm/day)", limits = c(0,0.5)) +
+  scale_y_continuous("Shoot growth (cm/day)", limits = c(0,0.6)) +
   scale_x_continuous("Days post harvest") +
   theme_bw()
+
+dph_plot + dia_plot
 ```
 
 ### Partial effects plot for cross-basis function
@@ -457,10 +401,7 @@ dph_plot <-
 
 ```{r}
 testvals <- seq(min(Q_precip), max(Q_precip), 0.1)
-
-# Q_precip_new <- mean_matrix(Q_precip, length(testvals))
-Q_precip_new<- matrix(mean(shootdf$precip_mm), nrow = length(testvals), ncol = ncol(Q_precip))
-
+Q_precip_new <- matrix(mean(shootdf$precip_mm), nrow = length(testvals), ncol = ncol(Q_precip))
 L_new <- mean_matrix(L, length(testvals))
 day_post_new <- rep(mean(shootdf$day_post), length(testvals))
 diameter_new <- rep(mean(shootdf$diameter), length(testvals))
@@ -504,18 +445,25 @@ resp_p[151, 4, drop = FALSE]
 
 #### Make the plot
 
+Raster version:
+
 ```{r}
 sp_pd <-
-  resp_p %>% 
-  as_tibble(rownames = "x") %>% 
-  pivot_longer(cols = starts_with("V"), names_to = "lag", names_prefix = "V", values_to = "fitted") %>% 
-  mutate(lag = as.double(lag)-1, x = as.double(x)) 
+  resp_p %>%
+  as_tibble(rownames = "x") %>%
+  pivot_longer(
+    cols = starts_with("V"),
+    names_to = "lag",
+    names_prefix = "V",
+    values_to = "fitted"
+  ) %>%
+  mutate(lag = as.double(lag) - 1, x = as.double(x)) 
 
 shoot_precip_raster <-
   ggplot(sp_pd, aes(x = x, y = lag, z = fitted, fill = fitted)) +
   geom_raster(interpolate = TRUE) +
   geom_contour(color = "black", alpha = 0.2) +
-  scale_fill_viridis_c("Shoot growth \n(cm/day)", option = "D") + 
+  scale_fill_viridis_c("Shoot growth \n(cm/day)", option = "A") + 
   scale_y_continuous("Lag (days)", expand = c(0,0)) + 
   scale_x_continuous("Precipitation (mm)", expand = c(0,0)) +
   theme(text = element_text(size = 14)) +
@@ -523,42 +471,18 @@ shoot_precip_raster <-
 save_plot(here("figs", "shoot_precip_raster.png"), shoot_precip_raster)
 ```
 
-## Try new countour plot
+Contour version:
 
 ```{r}
 shoot_precip_contour <-
   ggplot(sp_pd, aes(x = x, y = lag, z = fitted, fill = fitted)) +
   geom_contour_filled(aes(fill = stat(level)), breaks = seq(0.25, 0.45, by = 0.02))  +
-  scale_fill_viridis_d("Shoot growth \n(cm/day)", option = "D", drop = FALSE) +
+  scale_fill_viridis_d("Shoot growth \n(cm/day)", option = "A", drop = FALSE) +
   scale_y_continuous("Lag (days)", expand = c(0,0)) + 
   scale_x_continuous("Precipitation (mm)", expand = c(0,0)) +
   guides(fill = guide_colorsteps(show.limits = TRUE, barheight = unit(0.2, "npc"))) +
   theme(text = element_text(size = 14))
 save_plot(here("figs", "shoot_precip_contour.png"), shoot_precip_contour)
-
-
-
-shoot_precip_raster_magma <- shoot_precip_raster + scale_fill_viridis_c("Shoot growth \n(cm/day)", option = "A")
-shoot_precip_contour_magma <- shoot_precip_contour + scale_fill_viridis_d("Shoot growth \n(cm/day)", option = "A", drop = FALSE)
-shoot_precip_colortest <-
-  shoot_precip_raster + 
-  shoot_precip_contour + 
-  shoot_precip_raster_magma +
-  shoot_precip_contour_magma
-
-save_plot(here("shoot_precip_test.png"), shoot_precip_colortest, nrow = 2, ncol = 2)
-```
-
-test of all
-
-```{r}
-viridis_pal <- (shoot_precip_raster + shoot_temp_raster + plot_layout(guides = "collect"))
-magma_pal <- (shoot_precip_raster_magma + shoot_temp_raster_magma + plot_layout(guides = "collect"))
-viridis_pal_c <- (shoot_precip_contour + shoot_temp_contour + plot_layout(guides = "collect"))
-magma_pal_c <- (shoot_precip_contour_magma + shoot_temp_contour_magma + plot_layout(guides = "collect"))
-colortest <- viridis_pal /magma_pal / viridis_pal_c / magma_pal_c
-
-save_plot(here("colortest.png"), colortest, ncol = 2, nrow = 4)
 ```
 
 
@@ -568,7 +492,8 @@ Multipanel plot:
 precip_multi <-
   dph_plot +
   dia_plot +
-  shoot_precip_contour +
+  # shoot_precip_contour +
+  shoot_precip_raster +
   plot_layout(design = layout) +
   plot_annotation(tag_levels = "A") 
 
