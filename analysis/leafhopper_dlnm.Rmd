@@ -355,11 +355,17 @@ for(i in 1:ncol(Q_precip_new)) {
 }
 
 which(resp_p == min(resp_p), arr.ind = TRUE)
-resp_p[1,16]
+resp_p[1,16, drop = FALSE]
 
 which(resp_p == max(resp_p), arr.ind = TRUE)
 resp_p[200, 2, drop = FALSE]
 ```
+```{r}
+# at one day of lag:
+which(resp_p == min(resp_p[ , 2]), arr.ind = TRUE)
+
+```
+
 
 #### Make the plot
 

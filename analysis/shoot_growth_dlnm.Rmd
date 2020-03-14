@@ -288,6 +288,20 @@ which(resp_t == max(resp_t), arr.ind = TRUE)
 resp_t[54,16]
 ```
 
+At 1 day of lag:
+
+```{r}
+#optimum:
+which(resp_t == max(resp_t[ , 1, drop = FALSE]), arr.ind = TRUE)
+resp_t[130, 1, drop = FALSE]
+
+#min temp:
+resp_t[1, 1, drop = FALSE]
+
+#max temp:
+resp_t[nrow(resp_t), 1, drop = FALSE]
+```
+
 #### Make the plot
 
 Raster version:
@@ -440,6 +454,20 @@ resp_p[200, 1, drop = FALSE]
 
 which(resp_p == max(resp_p), arr.ind = TRUE)
 resp_p[37, 4, drop = FALSE]
+```
+
+At 1 day of lag:
+
+```{r}
+#max growth
+which(resp_p == max(resp_p[ , 1, drop = FALSE]), arr.ind = TRUE)
+resp_p[43, 1, drop = FALSE]
+
+#at min precip
+resp_p[1, 1, drop = FALSE]
+
+#at max precip
+resp_p[nrow(resp_p), 1, drop = FALSE]
 ```
 
 #### Make the plot
