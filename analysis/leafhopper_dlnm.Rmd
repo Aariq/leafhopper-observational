@@ -124,25 +124,9 @@ m_hopper_precip <-
       data = hoppers,
       # gamma = 1.2, #values above 1 make smoother.  Borrowed from Teller et al.
       method = "REML")
-
-m_hopper_date <- 
-  gam(hoppers ~
-        s(day, bs = "cs") +
-        s(day_post, bs = "cs") +
-        s(counter, bs = "re") + #no difference with random vs. fixed
-        s(interharvest_id, bs = "re") +
-        s(plant, bs = "re"),
-      family = poisson(),
-      offset = log(n_leaves),
-      data = hoppers,
-      # gamma = 1.2, #values above 1 make smoother.  Borrowed from Teller et al.
-      method = "REML")
 ```
 
 ```{r}
-anova.gam(m_hopper_date)
-anova.gam(m_hopper_precip)
-anova.gam(m_hopper_temp)
 ICtab(m_hopper_temp, m_hopper_precip, m_hopper_date)
 ```
 
@@ -160,14 +144,6 @@ sum(residuals(m_hopper_temp, type = "pearson")^2) / df.residual(m_hopper_temp)
 
 not overdispersed
 
-```{r}
-concurvity(m_hopper_temp, full = TRUE)
-# concurvity(m_hopper_temp, full = FALSE)
-```
-
-Day and temperature have high concurvity.  They are highly correlated, but correlations breaks down quickly through lag time  I'm going to include both.
-
-
 ## Significance test
 
 ```{r}
@@ -176,7 +152,7 @@ anova.gam(m_hopper_temp)
 
 Significant effect of plant (parametric factor), temperature, precip, days post harvest, and diameter on growth.
 
-## Predictions and plots
+## Extract predicted results for plots
 
 ### Plot regular smooths of covariates
 
@@ -230,15 +206,12 @@ for(i in 1:ncol(Q_temp_new)) {
 }
 
 which(resp_t == max(resp_t), arr.ind = TRUE)
-resp_t[1, 10, drop = FALSE]
+resp_t[1, 9, drop = FALSE]
 
 which(resp_t == min(resp_t), arr.ind = TRUE)
-resp_t[112, 16, drop = FALSE]
+resp_t[200, 15, drop = FALSE]
 ```
 
-#### Make the plot
-
-Raster version:
 
 ```{r}
 ht_pd <-
@@ -250,35 +223,8 @@ ht_pd <-
     names_prefix = "V",
     values_to = "fitted"
   ) %>%
-  mutate(lag = as.double(lag) - 1, x = as.double(x)) 
-
-hopper_temp_raster <-
-  ggplot(ht_pd, aes(x = x, y = lag, z = fitted, fill = fitted)) +
-  geom_raster(interpolate = TRUE) +
-  geom_contour(color = "black", alpha = 0.2) +
-  scale_fill_viridis_c("Leafhoppers \n per leaf", option = "A", limits = c(0.0348, 0.066)) + 
-  scale_y_continuous("Lag (days)", expand = c(0,0)) + 
-  scale_x_continuous("Temperature (ºC)", expand = c(0,0)) +
-  theme(text = element_text(size = 14))
-save_plot(here("figs", "hopper_temp_raster.png"), hopper_temp_raster)
+  mutate(lag = as.double(lag), x = as.double(x)) 
 ```
-
-Contour version:
-
-```{r}
-hopper_temp_contour <-
-  ggplot(ht_pd, aes(x = x, y = lag, z = fitted, fill = fitted)) +
-  geom_contour_filled(aes(fill = stat(level)),
-                      breaks = pretty(seq(0.0348, 0.0659, 0.0001), n = 12)) + 
-  scale_fill_viridis_d("Leafhoppers per leaf", option = "A", drop = FALSE) + 
-  scale_y_continuous("Lag (days)", expand = c(0,0)) + 
-  scale_x_continuous("Temperature (ºC)", expand = c(0,0)) +
-  guides(fill = guide_colorsteps(show.limits = TRUE, barheight = unit(0.75, "npc"))) +
-  theme(text = element_text(size = 14))
-save_plot(here("figs", "hopper_temp_contour.png"), hopper_temp_contour)
-```
-
-Cooler temperatures are good for leafhoppers.  Little discernable effect of lag.  Not sure how to interpret
 
 # Precip
 
@@ -288,15 +234,10 @@ Inspect gam:
 gam.check(m_hopper_precip)
 ```
 
-```{r}
-concurvity(m_hopper_precip)
-# concurvity(m_hopper_precip, full = FALSE)
-```
 
 
 ```{r}
 anova.gam(m_hopper_precip)
-summary(m_hopper_precip)
 ```
 
 significant effect of precip, but not of date.
@@ -306,7 +247,7 @@ significant effect of precip, but not of date.
 Not significant, so these won't be in the paper
 
 ```{r}
-plot(m_hopper_precip, all.terms = TRUE)
+plot(m_hopper_precip, all.terms = TRUE, pages = 1)
 ```
 
 
@@ -355,21 +296,17 @@ for(i in 1:ncol(Q_precip_new)) {
 }
 
 which(resp_p == min(resp_p), arr.ind = TRUE)
-resp_p[1,16, drop = FALSE]
+resp_p[1,15, drop = FALSE]
 
 which(resp_p == max(resp_p), arr.ind = TRUE)
-resp_p[200, 2, drop = FALSE]
+resp_p[200, 1, drop = FALSE]
 ```
 ```{r}
 # at one day of lag:
-which(resp_p == min(resp_p[ , 2]), arr.ind = TRUE)
-
+which(resp_p == min(resp_p[ , 1]), arr.ind = TRUE)
+resp_p[52, 1, drop = FALSE]
 ```
 
-
-#### Make the plot
-
-Raster version:
 
 ```{r}
 hp_pd <-
@@ -381,47 +318,57 @@ hp_pd <-
     names_prefix = "V",
     values_to = "fitted"
   ) %>%
-  mutate(lag = as.double(lag) - 1, x = as.double(x)) 
+  mutate(lag = as.double(lag), x = as.double(x)) 
+```
 
+
+
+# Plots
+
+common scale:
+
+```{r}
+hopper_lim <- c(min(resp_p, resp_t), max(resp_p, resp_t))
+```
+
+## Temperature cross-basis
+
+```{r}
+hopper_temp_raster <-
+  ggplot(ht_pd, aes(x = x, y = lag, z = fitted, fill = fitted)) +
+  geom_raster(interpolate = TRUE) +
+  geom_contour(color = "black", alpha = 0.2) +
+  scale_fill_viridis_c("Leafhoppers \n per leaf", option = "A", limits = hopper_lim) + 
+  scale_y_continuous("Lag (days)", expand = c(0,0)) + 
+  scale_x_continuous("Temperature (ºC)", expand = c(0,0)) +
+  theme(text = element_text(size = 14))
+save_plot(here("figs", "hopper_temp_raster.png"), hopper_temp_raster)
+```
+
+Cooler temperatures are good for leafhoppers.  Little discernable effect of lag.  Not sure how to interpret
+
+
+## Precipitation cross-basis
+
+```{r}
 hopper_precip_raster <-
   ggplot(hp_pd, aes(x = x, y = lag, z = fitted, fill = fitted)) +
   geom_raster(interpolate = TRUE) +
   geom_contour(color = "black", alpha = 0.2) +
-  scale_fill_viridis_c("Leafhoppers \n per leaf", option = "A", limits = c(0.0348, 0.066)) + 
+  scale_fill_viridis_c("Leafhoppers \n per leaf", option = "A", limits = hopper_lim) + 
   scale_y_continuous("Lag (days)", expand = c(0,0)) + 
   scale_x_continuous("Precipitation (mm)", expand = c(0,0)) +
   theme(text = element_text(size = 14))
 save_plot(here("figs", "hopper_precip_raster.png"), hopper_precip_raster)
 ```
-
-Contour vesrion:
-
-```{r}
-hopper_precip_contour <-
-  ggplot(hp_pd, aes(x = x, y = lag, z = fitted, fill = fitted)) +
-  geom_contour_filled(aes(fill = stat(level)),
-                      breaks = pretty(seq(0.0348, 0.0659, 0.0001), n = 12)) + 
-  scale_fill_viridis_d("Leafhoppers per leaf", option = "A", drop = FALSE) + 
-  scale_y_continuous("Lag (days)", expand = c(0,0)) + 
-  scale_x_continuous("Precipitation (mm)", expand = c(0,0)) +
-  guides(fill = guide_colorsteps(show.limits = TRUE, barheight = unit(0.7, "npc"))) +
-  theme(text = element_text(size = 14))
-save_plot(here("figs", "hopper_temp_contour.png"), hopper_temp_contour)
-```
-
-
 Low precip at 5 and 11 days ago has negative effect on leafhoppers (dessication?)
 
 High precip has positive effect on leafhoppers
 
-# Alternate plot layouts
 
-## Elizabeth's suggestion:
-
-Combine raster plots
+## Combine raster plots
 
 ```{r}
 hopper_cbs <- hopper_precip_raster + hopper_temp_raster + plot_layout(guide = "collect") + plot_annotation(tag_levels = "A")
 save_plot(here("figs", "hopper_crossbasis.png"), hopper_cbs, ncol = 2, nrow = 1, base_asp = 1.2)
 ```
-
