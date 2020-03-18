@@ -73,15 +73,15 @@ Create matrices for temperature, precip, and lag.
 ```{r}
 Q_temp <-
   hoppers %>% 
-  select(starts_with("temp"), -temp_at_count, -temp_max, -temp_min) %>% 
+  select(starts_with("temp_lag"), -temp_at_count, -temp_max, -temp_min) %>% 
   as.matrix()
 
 Q_precip <-
   hoppers %>%
-  select(starts_with("precip")) %>% 
+  select(starts_with("precip_lag")) %>% 
   as.matrix()
 
-L <- matrix(0:(ncol(Q_temp)-1), nrow(Q_temp), ncol(Q_temp), byrow = TRUE)
+L <- matrix(1:(ncol(Q_temp)), nrow(Q_temp), ncol(Q_temp), byrow = TRUE)
 ```
 
 # Build the GAMs
