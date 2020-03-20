@@ -560,7 +560,7 @@ Raster version:
 shoot_temp_raster <-
   ggplot(st_pd, aes(x = x, y = lag, z = fitted, fill = fitted)) +
   geom_raster(interpolate = TRUE) +
-  geom_contour(color = "black", alpha = 0.2) +
+  geom_contour(color = "grey50", size = 0.4) +
   scale_fill_viridis_c("Shoot growth \n(cm/day)", option = "A", limits = growth_lims) + 
   scale_y_continuous("Lag (days)", expand = c(0,0)) + 
   scale_x_continuous("Temperature (ºC)", expand = c(0,0)) +
@@ -577,7 +577,7 @@ Raster version:
 shoot_precip_raster <-
   ggplot(sp_pd, aes(x = x, y = lag, z = fitted, fill = fitted)) +
   geom_raster(interpolate = TRUE) +
-  geom_contour(color = "black", alpha = 0.2) +
+  geom_contour(color = "grey50", size = 0.4) +
   scale_fill_viridis_c("Shoot growth \n(cm/day)", option = "A", limits = growth_lims) + 
   scale_y_continuous("Lag (days)", expand = c(0,0)) + 
   scale_x_continuous("Precipitation (mm)", expand = c(0,0)) +
