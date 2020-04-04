@@ -564,7 +564,7 @@ shoot_temp_raster <-
   scale_fill_viridis_c("Shoot growth \n(cm/day)", option = "A", limits = growth_lims) + 
   scale_y_continuous("Lag (days)", expand = c(0,0)) + 
   scale_x_continuous("Temperature (ºC)", expand = c(0,0)) +
-  theme(text = element_text(size = 14))
+  theme(text = element_text(size = 14), aspect.ratio = 1)
 save_plot(here("figs", "shoot_temp_raster.png"), shoot_temp_raster)
 ```
 
@@ -581,7 +581,7 @@ shoot_precip_raster <-
   scale_fill_viridis_c("Shoot growth \n(cm/day)", option = "A", limits = growth_lims) + 
   scale_y_continuous("Lag (days)", expand = c(0,0)) + 
   scale_x_continuous("Precipitation (mm)", expand = c(0,0)) +
-  theme(text = element_text(size = 14)) 
+  theme(text = element_text(size = 14), aspect.ratio = 1)
 save_plot(here("figs", "shoot_precip_raster.png"), shoot_precip_raster)
 ```
 
@@ -593,5 +593,5 @@ shoot_cbs <-
   shoot_temp_raster +
   plot_layout(guide = "collect") + 
   plot_annotation(tag_levels = "A")
-save_plot(here("figs", "shoot_crossbasis.png"), shoot_cbs, ncol = 2, nrow = 1, base_asp = 1.2)
+save_plot(here("figs", "shoot_crossbasis.png"), shoot_cbs, ncol = 2, nrow = 1, base_asp = 1)
 ```

@@ -341,7 +341,7 @@ hopper_temp_raster <-
   scale_fill_viridis_c("Leafhoppers \n per leaf", option = "A", limits = hopper_lim) + 
   scale_y_continuous("Lag (days)", expand = c(0,0)) + 
   scale_x_continuous("Temperature (ºC)", expand = c(0,0)) +
-  theme(text = element_text(size = 14))
+  theme(text = element_text(size = 14), aspect.ratio = 1)
 save_plot(here("figs", "hopper_temp_raster.png"), hopper_temp_raster)
 ```
 
@@ -358,7 +358,7 @@ hopper_precip_raster <-
   scale_fill_viridis_c("Leafhoppers \n per leaf", option = "A", limits = hopper_lim) + 
   scale_y_continuous("Lag (days)", expand = c(0,0)) + 
   scale_x_continuous("Precipitation (mm)", expand = c(0,0)) +
-  theme(text = element_text(size = 14))
+  theme(text = element_text(size = 14), aspect.ratio = 1)
 save_plot(here("figs", "hopper_precip_raster.png"), hopper_precip_raster)
 ```
 Low precip at 5 and 11 days ago has negative effect on leafhoppers (dessication?)
@@ -376,5 +376,5 @@ hopper_cbs <-
   plot_annotation(tag_levels = "A")
 
 save_plot(here("figs", "hopper_crossbasis.png"), hopper_cbs,
-          ncol = 2, nrow = 1, base_asp = 1.2)
+          ncol = 2, nrow = 1, base_asp = 1)
 ```
