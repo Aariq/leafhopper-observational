@@ -14,6 +14,7 @@ output:
 library(tidyverse)
 library(here)
 library(lubridate)
+library(glue)
 library(conflicted)
 conflict_prefer("here", "here")
 conflict_prefer("filter", "dplyr")
@@ -74,13 +75,20 @@ Here I create lagged temperature and precip variables for 15 days in the past.
 ```{r}
 nlags = 15
 temp_lags <- map_dfc(1:nlags, ~lag(weather$temp_mean, .x)) %>%
-  set_names(glue::glue("temp_lag{1:nlags}"))
+  set_names(glue("temp_lag{1:nlags}"))
+
+temp_min_lags <- map_dfc(1:nlags, ~lag(weather$temp_min, .x)) %>% 
+  set_names(glue("temp_min_lag{1:nlags}"))
+
+temp_max_lags <- map_dfc(1:nlags, ~lag(weather$temp_max, .x)) %>% 
+  set_names(glue("temp_max_lag{1:nlags}"))
 
 precip_lags <- map_dfc(1:nlags, ~lag(weather$precip_mm, .x)) %>%
-  set_names(glue::glue("precip_lag{1:nlags}"))
+  set_names(glue("precip_lag{1:nlags}"))
 
-weather_lags <- bind_cols(weather, temp_lags, precip_lags) %>% 
+weather_lags <- bind_cols(weather, temp_lags, temp_min_lags, temp_max_lags, precip_lags) %>% 
   select(date, starts_with("temp_"), starts_with("precip_"))
+weather_lags
 ```
 
 # Write data
