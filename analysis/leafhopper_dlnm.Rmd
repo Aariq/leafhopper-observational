@@ -14,8 +14,6 @@ output:
 
 - Tidy up analysis
 
-- move wrangling out of this doc
-
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
@@ -39,6 +37,8 @@ conflict_prefer("filter", "dplyr")
 conflict_prefer("here", "here")
 conflict_prefer("lag", "dplyr")
 conflict_prefer("select", "dplyr")
+
+source(here("analysis", "functions.R"))
 ```
 
 
@@ -76,6 +76,16 @@ Q_temp <-
   select(starts_with("temp_lag"), -temp_at_count, -temp_max, -temp_min) %>% 
   as.matrix()
 
+Q_min_temp <-
+  hoppers %>% 
+  select(starts_with("temp_min_lag")) %>% 
+  as.matrix()
+
+Q_max_temp <-
+  hoppers %>% 
+  select(starts_with("temp_max_lag")) %>% 
+  as.matrix()
+
 Q_precip <-
   hoppers %>%
   select(starts_with("precip_lag")) %>% 
@@ -89,6 +99,7 @@ L <- matrix(1:(ncol(Q_temp)), nrow(Q_temp), ncol(Q_temp), byrow = TRUE)
 Temp and precip are highly concurve, so can't trust p-values. I'll do the models separately.
 
 ```{r}
+#mean daily temp
 m_hopper_temp <- 
   gam(hoppers ~
         s(Q_temp, L,
@@ -96,7 +107,6 @@ m_hopper_temp <-
           k = c(5, 7),
           xt = list(bs = "cr")
         ) +
-        # s(day, bs = "cs") +
         s(day_post, bs = "cs") +
         s(counter, bs = "re") + #no difference with random vs. fixed
         s(interharvest_id, bs = "re") +
@@ -104,7 +114,38 @@ m_hopper_temp <-
       family = poisson(),
       offset = log(n_leaves),
       data = hoppers,
-      # gamma = 1.2, #values above 1 make smoother.  Borrowed from Teller et al.
+      method = "REML")
+
+m_hopper_min_temp <- 
+  gam(hoppers ~
+        s(Q_min_temp, L,
+          bs = "cb",
+          k = c(5, 7),
+          xt = list(bs = "cr")
+        ) +
+        s(day_post, bs = "cs") +
+        s(counter, bs = "re") + #no difference with random vs. fixed
+        s(interharvest_id, bs = "re") +
+        s(plant, bs = "re"),
+      family = poisson(),
+      offset = log(n_leaves),
+      data = hoppers,
+      method = "REML")
+
+m_hopper_max_temp <- 
+  gam(hoppers ~
+        s(Q_max_temp, L,
+          bs = "cb",
+          k = c(5, 7),
+          xt = list(bs = "cr")
+        ) +
+        s(day_post, bs = "cs") +
+        s(counter, bs = "re") + #no difference with random vs. fixed
+        s(interharvest_id, bs = "re") +
+        s(plant, bs = "re"),
+      family = poisson(),
+      offset = log(n_leaves),
+      data = hoppers,
       method = "REML")
 
 m_hopper_precip <- 
@@ -114,7 +155,6 @@ m_hopper_precip <-
           k = c(5, 7),
           xt = list(bs = "cr")
         ) +
-        # s(day, bs = "cs") +
         s(day_post, bs = "cs") +
         s(counter, bs = "re") + #no difference with random vs. fixed
         s(interharvest_id, bs = "re") +
@@ -122,17 +162,16 @@ m_hopper_precip <-
       family = poisson(),
       offset = log(n_leaves),
       data = hoppers,
-      # gamma = 1.2, #values above 1 make smoother.  Borrowed from Teller et al.
       method = "REML")
 ```
 
 ```{r}
-ICtab(m_hopper_temp, m_hopper_precip)
+ICtab(m_hopper_temp, m_hopper_min_temp, m_hopper_max_temp, m_hopper_precip)
 ```
 
 Precip model wins.
 
-# Temperature
+# Mean Temperature
 
 ## Inspect the GAM
 
@@ -152,9 +191,7 @@ anova.gam(m_hopper_temp)
 
 Significant effect of plant (parametric factor), temperature, precip, days post harvest, and diameter on growth.
 
-## Extract predicted results for plots
-
-### Plot regular smooths of covariates
+## Plot regular smooths of covariates
 
 These are non-significant, so I won't include them in the paper figure.
 
@@ -162,69 +199,36 @@ These are non-significant, so I won't include them in the paper figure.
 plot.gam(m_hopper_temp, pages = 1, residuals = FALSE, all.terms = TRUE)
 ```
 
-### Partial effects plot for cross-basis function
+# Minimum temperature
 
-#### Make newdata
-
-```{r}
-testvals <- seq(min(Q_temp), max(Q_temp), length.out = 200)
-Q_temp_new <- matrix(mean(hoppers$temp_mean), nrow = length(testvals), ncol = ncol(Q_temp))
-L_new <- L[1:length(testvals), ]
-day_post_new <- rep(mean(hoppers$day_post), length(testvals))
-day_new <- rep(mean(hoppers$day), length(testvals))
-interharvest_id_new <- rep("newlevel", length(testvals))
-plant_new <- rep("newlevel", length(testvals))
-counter_new <- rep("newlevel", length(testvals))
-```
-
-#### predict loops
+## Inspect the GAM
 
 ```{r}
-resp_t <- array(dim = c(length(testvals), ncol(Q_temp_new)))
-rownames(resp_t) <- testvals
-
-#loop through columns of matrix, replace with testvals, predict fitted.
-for(i in 1:ncol(Q_temp_new)) {
-  P1_i <- Q_temp_new
-  P1_i[, i] <- testvals
-  resp_t[, i] <-
-    suppressWarnings( #new levels of random effects are on purpose
-      predict(
-        m_hopper_temp,
-        newdata = list(
-          Q_temp = P1_i,
-          L = L_new,
-          day_post = day_post_new,
-          day = day_new,
-          interharvest_id = interharvest_id_new,
-          plant = plant_new,
-          counter = counter_new
-        ),
-        type = "response"
-      )
-    )
-}
-
-which(resp_t == max(resp_t), arr.ind = TRUE)
-resp_t[1, 9, drop = FALSE]
-
-which(resp_t == min(resp_t), arr.ind = TRUE)
-resp_t[200, 15, drop = FALSE]
+gam.check(m_hopper_min_temp)
+#check for overdispersion
+sum(residuals(m_hopper_min_temp, type = "pearson")^2) / df.residual(m_hopper_min_temp)
 ```
 
+## Significance test
 
 ```{r}
-ht_pd <-
-  resp_t %>%
-  as_tibble(rownames = "x") %>%
-  pivot_longer(
-    cols = starts_with("V"),
-    names_to = "lag",
-    names_prefix = "V",
-    values_to = "fitted"
-  ) %>%
-  mutate(lag = as.double(lag), x = as.double(x)) 
+anova.gam(m_hopper_min_temp)
 ```
+
+Min temp is significant
+
+# Maximum temperature
+```{r}
+gam.check(m_hopper_max_temp)
+#check for overdispersion
+sum(residuals(m_hopper_max_temp, type = "pearson")^2) / df.residual(m_hopper_max_temp)
+```
+
+```{r}
+anova.gam(m_hopper_max_temp)
+```
+
+max temp also highly significant.
 
 # Precip
 
@@ -251,87 +255,26 @@ plot(m_hopper_precip, all.terms = TRUE, pages = 1)
 ```
 
 
-### Partial effects plot for cross-basis function
-
-#### Make newdata
-
-```{r}
-m_hopper_precip
-testvals <- seq(min(Q_precip), max(Q_precip), length.out = 200)
-Q_precip_new <- matrix(mean(hoppers$precip_mm), nrow = length(testvals), ncol = ncol(Q_precip))
-L_new <- L[1:length(testvals), ]
-day_post_new <- rep(mean(hoppers$day_post), length(testvals))
-day_new <- rep(mean(hoppers$day), length(testvals))
-interharvest_id_new <- rep("newlevel", length(testvals))
-plant_new <- rep("newlevel", length(testvals))
-counter_new <- rep("newlevel", length(testvals))
-```
-
-#### predict loops
-
-```{r}
-resp_p <- array(dim = c(length(testvals), ncol(Q_precip_new)))
-rownames(resp_p) <- testvals
-
-#loop through columns of matrix, replace with testvals, predict fitted.
-for(i in 1:ncol(Q_precip_new)) {
-  P1_i <- Q_precip_new
-  P1_i[, i] <- testvals
-  resp_p[, i] <-
-    suppressWarnings( #new levels of random effects are on purpose
-      predict(
-        m_hopper_precip,
-        newdata = list(
-          Q_precip = P1_i,
-          L = L_new,
-          day_post = day_post_new,
-          day = day_new,
-          interharvest_id = interharvest_id_new,
-          plant = plant_new,
-          counter = counter_new
-        ),
-        type = "response"
-      )
-    )
-}
-
-which(resp_p == min(resp_p), arr.ind = TRUE)
-resp_p[1,15, drop = FALSE]
-
-which(resp_p == max(resp_p), arr.ind = TRUE)
-resp_p[200, 1, drop = FALSE]
-```
-```{r}
-# at one day of lag:
-which(resp_p == min(resp_p[ , 1]), arr.ind = TRUE)
-resp_p[52, 1, drop = FALSE]
-```
-
-
-```{r}
-hp_pd <-
-  resp_p %>%
-  as_tibble(rownames = "x") %>%
-  pivot_longer(
-    cols = starts_with("V"),
-    names_to = "lag",
-    names_prefix = "V",
-    values_to = "fitted"
-  ) %>%
-  mutate(lag = as.double(lag), x = as.double(x)) 
-```
-
-
-
 # Plots
+
+## Generate plot data
+
+```{r}
+ht_pd <- mypred(Q_temp, L, hoppers, "temp_mean", m_hopper_temp)
+htmin_pd <- mypred(Q_min_temp, L, hoppers, "temp_min", m_hopper_min_temp)
+htmax_pd <- mypred(Q_max_temp, L, hoppers, "temp_max", m_hopper_max_temp)
+hp_pd <- mypred(Q_precip, L, hoppers, "precip_mm", m_hopper_precip)
+```
+
 
 common scale:
 
 ```{r}
-hopper_lim <- c(min(resp_p, resp_t), max(resp_p, resp_t))
+hopper_lim <- c(min(ht_pd$fitted, htmin_pd$fitted, htmax_pd$fitted, hp_pd$fitted),
+                max(ht_pd$fitted, htmin_pd$fitted, htmax_pd$fitted, hp_pd$fitted))
 ```
 
-## Temperature cross-basis
+## Mean Temperature cross-basis
 
 ```{r}
 hopper_temp_raster <-
@@ -342,10 +285,41 @@ hopper_temp_raster <-
   scale_y_continuous("Lag (days)", expand = c(0,0)) + 
   scale_x_continuous("Temperature (ºC)", expand = c(0,0)) +
   theme(text = element_text(size = 14), aspect.ratio = 1)
+hopper_temp_raster
 save_plot(here("figs", "hopper_temp_raster.png"), hopper_temp_raster)
 ```
 
 Cooler temperatures are good for leafhoppers.  Little discernable effect of lag.  Not sure how to interpret
+
+## Minimum Temperature cross-basis
+
+```{r}
+hopper_min_temp_raster <-
+  ggplot(htmin_pd, aes(x = x, y = lag, z = fitted, fill = fitted)) +
+  geom_raster(interpolate = TRUE) +
+  geom_contour(color = "grey50", size = 0.4) +
+  scale_fill_viridis_c("Leafhoppers \n per leaf", option = "A", limits = hopper_lim) + 
+  scale_y_continuous("Lag (days)", expand = c(0,0)) + 
+  scale_x_continuous("Temperature (ºC)", expand = c(0,0)) +
+  theme(text = element_text(size = 14), aspect.ratio = 1)
+hopper_min_temp_raster
+save_plot(here("figs", "hopper_min_temp_raster.png"), hopper_min_temp_raster)
+```
+
+## Maximum temperature cross-basis
+
+```{r}
+hopper_max_temp_raster <-
+  ggplot(htmax_pd, aes(x = x, y = lag, z = fitted, fill = fitted)) +
+  geom_raster(interpolate = TRUE) +
+  geom_contour(color = "grey50", size = 0.4) +
+  scale_fill_viridis_c("Leafhoppers \n per leaf", option = "A", limits = hopper_lim) + 
+  scale_y_continuous("Lag (days)", expand = c(0,0)) + 
+  scale_x_continuous("Temperature (ºC)", expand = c(0,0)) +
+  theme(text = element_text(size = 14), aspect.ratio = 1)
+hopper_max_temp_raster
+save_plot(here("figs", "hopper_max_temp_raster.png"), hopper_max_temp_raster)
+```
 
 
 ## Precipitation cross-basis
@@ -359,6 +333,7 @@ hopper_precip_raster <-
   scale_y_continuous("Lag (days)", expand = c(0,0)) + 
   scale_x_continuous("Precipitation (mm)", expand = c(0,0)) +
   theme(text = element_text(size = 14), aspect.ratio = 1)
+hopper_precip_raster
 save_plot(here("figs", "hopper_precip_raster.png"), hopper_precip_raster)
 ```
 Low precip at 5 and 11 days ago has negative effect on leafhoppers (dessication?)
