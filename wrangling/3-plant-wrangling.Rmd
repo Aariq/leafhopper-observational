@@ -35,21 +35,12 @@ gathering of shoots by plant and date, and reading in of stem diameter data done
 ```{r}
 growth <- read_rds(here("data", "cleaned", "shoot-growth.rds"))
 diameter <- read_rds(here("data", "cleaned", "shoot-diameter.rds"))
-hobo <- read_rds(here("data", "cleaned", "daily-temps-hobo.rds"))
-caas <- read_rds(here("data", "cleaned", "weather-caas.rds"))
-rain_gauge <- read_rds(here("data", "cleaned", "rain-gauge.rds"))
-caas_sub <-
-  caas %>% 
-    select(date, precip_caas_mm, temp_mean_caas, temp_max_caas, temp_min_caas, sun_hrs, rh) %>% 
-  filter(year(date) == 2017)
+weather_lags <- read_rds(here("data", "cleaned", "weather_lags.rds"))
 ```
 
 `growth`: field data including plant growth and leafhopper densities
 `diameter`: stem diameters taken once per harvest
-`hobo`: daily summary of datalogger temps
-`rain_gauge`: precipitation data from a rain gauge that I installed on the farm.  This record is incomplete, as the shipping of the rain gauge was delayed.
-`caas`: weather station data.  Note: already checked that temperature matches the datalogger well, and precipitation matches rain gauge OK (significantly correlated, but some discrepancies in ammount of precip).
-
+`weather_lags`: output from "2-weather-wrangling.Rmd"
 
 Separate fields A and B
 
@@ -211,65 +202,13 @@ shoot.data <- bind_rows(data.A.full, data.B.full) %>% left_join(dia.data2)
 ```
 
 # Add weather data
-First, I'll join the weather station data to the hobo data to extrapolate temperature data backwards in time.  Preliminary analysis showed that the temperature matched well between the hobo logger and the CAAS weather data.  Precipitation, however, did not match.
 
-```{r}
-temperature <-
-  full_join(caas_sub, hobo) %>% 
-    mutate(temp_mean = ifelse(is.na(temp_mean), temp_mean_caas, temp_mean),
-         temp_max = ifelse(is.na(temp_max), temp_max_caas, temp_max),
-         temp_min = ifelse(is.na(temp_min), temp_min_caas, temp_min)) %>% 
-    arrange(date) %>% 
-    select(-matches("caas"))
-```
-
-~~Now I'll do the same for the precip data~~
-
-I'll just use the CAAS weather station precip data.  It's correlated to the rain gauge data, but covers a longer time span.  It seems like all the CAAS precip data is higher than the rain gauge, so I'll just use it instead of prepending the rain gauge data.
-
-```{r}
-# precip <-
-#   full_join(caas_sub, rain_gauge) %>% 
-#   mutate(precip_mm = ifelse(is.na(precip_mm), precip_caas_mm, precip_mm)) %>% 
-#   arrange(date) %>% 
-#   select(date, precip_mm)
-precip <-
-  caas_sub %>% 
-  select(date, "precip_mm" = precip_caas_mm) %>% 
-  arrange(date)
-```
-
-join modified weather data now
-
-```{r}
-nlags = 15
-weather <- full_join(temperature, precip, by = "date") %>% arrange(date)
-
-temp_lags <- map_dfc(1:nlags, ~lag(weather$temp_mean, .x)) %>%
-  set_names(glue::glue("temp_lag{1:nlags}"))
-precip_lags <- map_dfc(1:nlags, ~lag(weather$precip_mm, .x)) %>%
-  set_names(glue::glue("precip_lag{1:nlags}"))
-
-weather_lags <- bind_cols(weather, temp_lags, precip_lags) %>% 
-  select(date, starts_with("temp_"), starts_with("precip_"))
-```
-
-## Add dates for all shoots and join
 
 ```{r}
 shoot_data_joined <-
   full_join(shoot.data, weather_lags, by = "date") %>% 
   arrange(date)
 
-# prevweather<-
-#   weather %>% 
-#   filter(date < min(shoot.data$date)) 
-# 
-# shoot_data_full <-
-#   shoot_data_joined %>%
-#   group_by(shoot_id) %>% 
-#   group_modify(~bind_rows(., prevweather)) %>% 
-#   arrange(shoot_id, date)
 shoot_data_full <- shoot_data_joined %>% select(-temp_max, -temp_min)
 ```
 
@@ -288,8 +227,6 @@ shoot.data2 <-
          start = min(day, na.rm = TRUE),
          mean_day = mean(day, na.rm = TRUE)) %>%
   ungroup()
-
-# shoot.data3 %>% filter(day_post ==0) %>% group_by(field) %>% count(interharvest.no)
 ```
 
 3. create unique IDs for plant and interharvest number nested within field
@@ -308,42 +245,22 @@ shoot.data4 <- shoot.data3 %>% filter(interharvest_id != "B1")
 ```
 
 
-6. Create lagged temperature variables
-
-```{r}
-# shoot.data5 <-
-#   shoot.data4 %>%
-#   select(date, shoot_id, growth, diameter, temp_mean, precip_mm, day_post, mean_day, interharvest_id) %>% 
-#   group_by(shoot_id) %>% 
-#   arrange(date) %>% 
-#   mutate(temp_lag1 = lag(temp_mean),
-#          temp_lag2 = lag(temp_mean, n = 2L),
-#          temp_lag3 = lag(temp_mean, n = 3L),
-#          temp_lag4 = lag(temp_mean, n = 4L),
-#          temp_lag5 = lag(temp_mean, n = 5L)) %>% 
-#   mutate(precip_lag1 = lag(precip_mm, n = 1L),
-#          precip_lag2 = lag(precip_mm, n = 2L),
-#          precip_lag3 = lag(precip_mm, n = 3L),
-#          precip_lag4 = lag(precip_mm, n = 4L),
-#          precip_lag5 = lag(precip_mm, n = 5L))
-shoot.data5 <- shoot.data4
-```
-
 5. Remove outliers
 ```{r}
-shoot.data6 <-
-  shoot.data5 %>%
+shoot.data5 <-
+  shoot.data4 %>%
   filter(is.na(growth) | !growth > 5 & !growth < -5) 
 ```
 
-7. Remove NAs
+6. Remove NAs and rearrange columns
+
 ```{r}
-shoot.data7 <- 
-  shoot.data6 %>% 
+shoot.data6 <- 
+  shoot.data5 %>% 
   filter(!is.na(growth)) %>% 
   filter(!is.na(diameter))
 
-shootdf <- shoot.data7 %>%
+shootdf <- shoot.data6 %>%
   select(
     date,
     shoot_id,
@@ -364,19 +281,14 @@ shootdf <- shoot.data7 %>%
 ```
 ```{r}
 shootdf
-skimr::skim(shootdf %>% ungroup())
+# skimr::skim(shootdf)
 ```
 
-# Export Data
+# Export Shoot Growth Data
 
-## Export shoot growth data
 ```{r}
 write_rds(shootdf, here("data", "cleaned", "shoots.rds"))
 ```
 
-## Weather lag data
 
-```{r}
-write_rds(weather_lags, here("data", "cleaned", "weather_lags.rds"))
-```
 

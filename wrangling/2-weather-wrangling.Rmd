@@ -1,0 +1,90 @@
+---
+title: "Weather Data Wrangling"
+author: "Eric R. Scott"
+date: "2019-11-5"
+output: 
+  html_notebook: 
+    highlight: kate
+    theme: yeti
+    toc: yes
+    toc_float: yes
+    number_sections: yes
+---
+```{r}
+library(tidyverse)
+library(here)
+library(lubridate)
+library(conflicted)
+conflict_prefer("here", "here")
+conflict_prefer("filter", "dplyr")
+conflict_prefer("lag", "dplyr")
+```
+
+# Purpose
+
+Here I join all the sources of weather data and create lagged temperature and preicipitation variables.
+
+# Read in data
+
+```{r}
+hobo <- read_rds(here("data", "cleaned", "daily-temps-hobo.rds"))
+caas <- read_rds(here("data", "cleaned", "weather-caas.rds"))
+rain_gauge <- read_rds(here("data", "cleaned", "rain-gauge.rds"))
+caas_sub <-
+  caas %>%
+    select(date, precip_caas_mm, temp_mean_caas, temp_max_caas, temp_min_caas, sun_hrs, rh) %>%
+  filter(year(date) == 2017)
+```
+
+# Join Data Sources
+
+CAAS weather station data and on-site hobo data logger
+
+```{r}
+temperature <-
+  full_join(caas_sub, hobo, by = "date") %>% 
+    mutate(temp_mean = ifelse(is.na(temp_mean), temp_mean_caas, temp_mean),
+         temp_max = ifelse(is.na(temp_max), temp_max_caas, temp_max),
+         temp_min = ifelse(is.na(temp_min), temp_min_caas, temp_min)) %>% 
+    arrange(date) %>% 
+    select(-matches("caas"))
+```
+
+I'll just use the CAAS weather station precip data.  It's correlated to the rain gauge data, but covers a longer time span.  It seems like all the CAAS precip data is higher than the rain gauge, so I'll just use it instead of prepending the rain gauge data.
+
+TODO: look into using interpolated rainfall data instead.
+
+```{r}
+precip <-
+  caas_sub %>% 
+  select(date, "precip_mm" = precip_caas_mm) %>% 
+  arrange(date)
+```
+
+join modified weather data now
+
+```{r}
+weather <- full_join(temperature, precip, by = "date") %>% arrange(date)
+```
+
+# Create lagged variables
+
+Here I create lagged temperature and precip variables for 15 days in the past.
+
+```{r}
+nlags = 15
+temp_lags <- map_dfc(1:nlags, ~lag(weather$temp_mean, .x)) %>%
+  set_names(glue::glue("temp_lag{1:nlags}"))
+
+precip_lags <- map_dfc(1:nlags, ~lag(weather$precip_mm, .x)) %>%
+  set_names(glue::glue("precip_lag{1:nlags}"))
+
+weather_lags <- bind_cols(weather, temp_lags, precip_lags) %>% 
+  select(date, starts_with("temp_"), starts_with("precip_"))
+```
+
+# Write data
+
+```{r}
+write_rds(weather_lags, here("data", "cleaned", "weather_lags.rds"))
+```
