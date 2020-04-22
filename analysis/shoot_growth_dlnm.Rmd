@@ -35,6 +35,7 @@ library(glue)
 library(colorspace)
 library(cowplot)
 library(patchwork)
+library(bbmle)
 
 conflict_prefer("filter", "dplyr")
 conflict_prefer("here", "here")
@@ -93,61 +94,26 @@ Q_temp <-
   select(starts_with("temp_lag")) %>% 
   as.matrix()
 
+Q_min_temp <-
+  shootdf %>% 
+  select(starts_with("temp_min_lag")) %>% 
+  as.matrix()
+
+Q_max_temp <-
+  shootdf %>% 
+  select(starts_with("temp_max_lag")) %>% 
+  as.matrix()
+
 Q_precip <-
   shootdf %>%
   select(starts_with("precip_lag")) %>% 
   as.matrix()
 
 L <- matrix(1:(ncol(Q_temp)), nrow(Q_temp), ncol(Q_temp), byrow = TRUE)
-head(L)
+# head(L)
 ```
 
-## Build the GAM
-
-```{r}
-m_shoots <- 
-  gam(growth ~ 
-        #cross-basis function for temperature
-        s(Q_temp, L,
-          bs = "cb",
-          k = c(5, 7),
-          xt = list(bs = "cr")
-          ) +
-        #cross-basis function for precipitation
-        s(Q_precip, L,
-          bs = "cb",
-          k = c(5, 7),
-          xt = list(bs = "cr")
-          ) +
-        s(day_post, bs = "cs") + s(diameter, bs = "cs") + #co-variates
-        s(interharvest_id, bs = "re") + s(plant, bs = "re"), #random effects
-      data = shootdf,
-      family = scat, #because residuals are very leptokurtic w/ gaussian
-      method = "REML")
-```
-
-
-## Inspect the GAM
-
-```{r eval = FALSE}
-gam.check(m_shoots)
-# summary(m_shoots)
-m_shoots$converged
-```
-
-GAM converges, number of knots seems a bit high for temperature and precip, but that's fine
-
-```{r eval = FALSE}
-concurvity(m_shoots, full = TRUE)
-# concurvity(m_shoots, full = FALSE)
-```
-
-Precip and temp are concurve(?) meaning they might be redundant in the model.  This makes sense as temperature and precip are generally correlated to some extent.
-
-
-# Dealing with Concurvity:
-
-I think its best if I fit two GAMs---one with just temperature and one with just precipitation.  Then I will compete those with AIC and choose the model that is best.  I'll report the stuff about concurvity
+## Fit cross-basis GAMs
 
 ```{r}
 m_shoot_temp <- 
@@ -163,6 +129,35 @@ m_shoot_temp <-
       data = shootdf,
       family = scat, #because residuals are very leptokurtic w/ gaussian
       method = "REML")
+
+m_shoot_min_temp <- 
+  gam(growth ~ 
+        #cross-basis function for temperature
+        s(Q_min_temp, L,
+          bs = "cb",
+          k = c(5, 7),
+          xt = list(bs = "cr")
+          ) +
+        s(day_post, bs = "cs") + s(diameter, bs = "cs") + #co-variates
+        s(interharvest_id, bs = "re") + s(plant, bs = "re"), #random effects
+      data = shootdf,
+      family = scat, #because residuals are very leptokurtic w/ gaussian
+      method = "REML")
+
+m_shoot_max_temp <- 
+  gam(growth ~ 
+        #cross-basis function for temperature
+        s(Q_max_temp, L,
+          bs = "cb",
+          k = c(5, 7),
+          xt = list(bs = "cr")
+          ) +
+        s(day_post, bs = "cs") + s(diameter, bs = "cs") + #co-variates
+        s(interharvest_id, bs = "re") + s(plant, bs = "re"), #random effects
+      data = shootdf,
+      family = scat, #because residuals are very leptokurtic w/ gaussian
+      method = "REML")
+
 
 m_shoot_precip <- 
   gam(growth ~ 
@@ -180,15 +175,12 @@ m_shoot_precip <-
 ```
 
 ```{r}
-AIC(m_shoot_temp, m_shoot_precip)
-bbmle::ICtab(m_shoot_temp, m_shoot_precip)
+ICtab(m_shoot_temp, m_shoot_min_temp, m_shoot_max_temp, m_shoot_precip)
 ```
 
-# Temperature only model
+The precipitation model has the lowest AIC
 
-The temperature only model wins with lowest AIC.
-
-## Significance test
+# Mean Temperature model
 
 ```{r}
 anova(m_shoot_temp)
@@ -196,13 +188,28 @@ anova(m_shoot_temp)
 
 Significant effects of lagged temperature, days post harvest, stem diameter, and plant ID.
 
-# Precip only model
+# Minimum Temperature model
+
+```{r}
+anova(m_shoot_min_temp)
+```
+
+still significant effect of minimum temperature
+
+
+# Maximum temperature model
+
+```{r}
+anova(m_shoot_max_temp)
+```
+
+Same, still significant.
+
+# Precipitation model
 
 ```{r}
 anova.gam(m_shoot_precip)
 ```
-
-
 
 # Plots
 
@@ -226,7 +233,6 @@ shoot_pd <-
 dph_t <- shoot_pd[[2]]
 dia_t <- shoot_pd[[3]]
 ```
-
 
 Temperature:
 
@@ -353,6 +359,10 @@ save_plot(here("figs", "shoot_covariates.png"), covars, ncol = 2, nrow = 1, base
 ```{r}
 st_pd <- pred_shoots(Q = Q_temp, L = L, df = shootdf, colname = "temp_mean",
                      model = m_shoot_temp)
+stmin_pd <- pred_shoots(Q = Q_min_temp, L = L, df = shootdf, colname = "temp_min",
+                     model = m_shoot_min_temp)
+stmax_pd <- pred_shoots(Q = Q_max_temp, L = L, df = shootdf, colname = "temp_max",
+                     model = m_shoot_max_temp)
 sp_pd <- pred_shoots(Q = Q_precip, L = L, df = shootdf, colname = "precip_mm",
                      model = m_shoot_precip)
 ```
@@ -360,11 +370,11 @@ sp_pd <- pred_shoots(Q = Q_precip, L = L, df = shootdf, colname = "precip_mm",
 Uniform scale across plots:
 
 ```{r}
-growth_lims <- c(min(st_pd$fitted, sp_pd$fitted),
-                 max(st_pd$fitted, sp_pd$fitted))
+growth_lims <- c(min(st_pd$fitted, sp_pd$fitted, stmin_pd$fitted, stmax_pd$fitted),
+                 max(st_pd$fitted, sp_pd$fitted, stmin_pd$fitted, stmax_pd$fitted))
 ```
 
-### Temperature cross-basis
+### Mean Temperature cross-basis
 
 Raster version:
 
@@ -377,9 +387,37 @@ shoot_temp_raster <-
   scale_y_continuous("Lag (days)", expand = c(0,0)) + 
   scale_x_continuous("Temperature (ºC)", expand = c(0,0)) +
   theme(text = element_text(size = 14), aspect.ratio = 1)
+shoot_temp_raster
 save_plot(here("figs", "shoot_temp_raster.png"), shoot_temp_raster)
 ```
 
+### Min temperature cross-basis
+
+```{r}
+shoot_min_temp_raster <-
+  ggplot(stmin_pd, aes(x = x, y = lag, z = fitted, fill = fitted)) +
+  geom_raster(interpolate = TRUE) +
+  geom_contour(color = "grey50", size = 0.4) +
+  scale_fill_viridis_c("Shoot growth \n(cm/day)", option = "A", limits = growth_lims) + 
+  scale_y_continuous("Lag (days)", expand = c(0,0)) + 
+  scale_x_continuous("Temperature (ºC)", expand = c(0,0)) +
+  theme(text = element_text(size = 14), aspect.ratio = 1)
+shoot_min_temp_raster
+```
+
+### Max temperature cross-basis
+
+```{r}
+shoot_max_temp_raster <-
+  ggplot(stmax_pd, aes(x = x, y = lag, z = fitted, fill = fitted)) +
+  geom_raster(interpolate = TRUE) +
+  geom_contour(color = "grey50", size = 0.4) +
+  scale_fill_viridis_c("Shoot growth \n(cm/day)", option = "A", limits = growth_lims) + 
+  scale_y_continuous("Lag (days)", expand = c(0,0)) + 
+  scale_x_continuous("Temperature (ºC)", expand = c(0,0)) +
+  theme(text = element_text(size = 14), aspect.ratio = 1)
+shoot_max_temp_raster
+```
 
 ### Precip cross-basis
 

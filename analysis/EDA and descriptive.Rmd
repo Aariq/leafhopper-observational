@@ -142,7 +142,49 @@ save_plot(here("figs", "exploratory.png"), plot1, base_height = 7, base_aspect_r
 
 # Correlation / concurvity supplementary plot
 
-Concurvity estimated from GAM with both temp and precip worst was 0.99
+```{r}
+Q_temp <-
+  shootdf %>% 
+  select(starts_with("temp_lag")) %>% 
+  as.matrix()
+
+Q_precip <-
+  shootdf %>%
+  select(starts_with("precip_lag")) %>% 
+  as.matrix()
+
+L <- matrix(1:(ncol(Q_temp)), nrow(Q_temp), ncol(Q_temp), byrow = TRUE)
+# head(L)
+```
+
+```{r}
+m_shoots <- 
+  gam(growth ~ 
+        #cross-basis function for temperature
+        s(Q_temp, L,
+          bs = "cb",
+          k = c(5, 7),
+          xt = list(bs = "cr")
+          ) +
+        #cross-basis function for precipitation
+        s(Q_precip, L,
+          bs = "cb",
+          k = c(5, 7),
+          xt = list(bs = "cr")
+          ) +
+        s(day_post, bs = "cs") + s(diameter, bs = "cs") + #co-variates
+        s(interharvest_id, bs = "re") + s(plant, bs = "re"), #random effects
+      data = shootdf,
+      family = scat, #because residuals are very leptokurtic w/ gaussian
+      method = "REML")
+```
+
+```{r eval = FALSE}
+concurvity(m_shoots, full = TRUE)
+# concurvity(m_shoots, full = FALSE)
+```
+
+Precip and temp are concurve meaning they might be redundant in the model.  This makes sense as temperature and precip are generally correlated to some extent.
 
 ```{r}
 weatherdf
