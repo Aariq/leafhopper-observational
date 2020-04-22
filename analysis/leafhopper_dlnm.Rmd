@@ -260,10 +260,10 @@ plot(m_hopper_precip, all.terms = TRUE, pages = 1)
 ## Generate plot data
 
 ```{r}
-ht_pd <- mypred(Q_temp, L, hoppers, "temp_mean", m_hopper_temp)
-htmin_pd <- mypred(Q_min_temp, L, hoppers, "temp_min", m_hopper_min_temp)
-htmax_pd <- mypred(Q_max_temp, L, hoppers, "temp_max", m_hopper_max_temp)
-hp_pd <- mypred(Q_precip, L, hoppers, "precip_mm", m_hopper_precip)
+ht_pd <- pred_hoppers(Q_temp, L, hoppers, "temp_mean", m_hopper_temp)
+htmin_pd <- pred_hoppers(Q_min_temp, L, hoppers, "temp_min", m_hopper_min_temp)
+htmax_pd <- pred_hoppers(Q_max_temp, L, hoppers, "temp_max", m_hopper_max_temp)
+hp_pd <- pred_hoppers(Q_precip, L, hoppers, "precip_mm", m_hopper_precip)
 ```
 
 

@@ -40,6 +40,8 @@ conflict_prefer("filter", "dplyr")
 conflict_prefer("here", "here")
 conflict_prefer("lag", "dplyr")
 conflict_prefer("select", "dplyr")
+
+source(here("analysis", "functions.R"))
 ```
 
 # Goal
@@ -121,7 +123,6 @@ m_shoots <-
         s(interharvest_id, bs = "re") + s(plant, bs = "re"), #random effects
       data = shootdf,
       family = scat, #because residuals are very leptokurtic w/ gaussian
-      # gamma = 1.2, #values above 1 make smoother.  Borrowed from Teller et al.
       method = "REML")
 ```
 
@@ -139,7 +140,6 @@ GAM converges, number of knots seems a bit high for temperature and precip, but 
 ```{r eval = FALSE}
 concurvity(m_shoots, full = TRUE)
 # concurvity(m_shoots, full = FALSE)
-
 ```
 
 Precip and temp are concurve(?) meaning they might be redundant in the model.  This makes sense as temperature and precip are generally correlated to some extent.
@@ -162,7 +162,6 @@ m_shoot_temp <-
         s(interharvest_id, bs = "re") + s(plant, bs = "re"), #random effects
       data = shootdf,
       family = scat, #because residuals are very leptokurtic w/ gaussian
-      # gamma = 1.2, #values above 1 make smoother.  Borrowed from Teller et al.
       method = "REML")
 
 m_shoot_precip <- 
@@ -177,7 +176,6 @@ m_shoot_precip <-
         s(interharvest_id, bs = "re") + s(plant, bs = "re"), #random effects
       data = shootdf,
       family = scat, #because residuals are very leptokurtic w/ gaussian
-      # gamma = 1.2, #values above 1 make smoother.  Borrowed from Teller et al.
       method = "REML")
 ```
 
@@ -198,9 +196,27 @@ anova(m_shoot_temp)
 
 Significant effects of lagged temperature, days post harvest, stem diameter, and plant ID.
 
-## Extract predicted values for plots
+# Precip only model
 
-### Regular smooths for covariates
+```{r}
+anova.gam(m_shoot_precip)
+```
+
+
+
+# Plots
+
+## Covariates:
+
+Extract data from GAM:
+
+```{r include=FALSE}
+#get data
+shoot_pd <- plot.gam(m_shoot_precip, seWithMean = TRUE, shift = coef(m_shoot_precip)[1])
+
+dph_p <- shoot_pd[[2]]
+dia_p <- shoot_pd[[3]]
+```
 
 ```{r include=FALSE}
 #pull plot data
@@ -211,186 +227,6 @@ dph_t <- shoot_pd[[2]]
 dia_t <- shoot_pd[[3]]
 ```
 
-
-
-Shoots with larger diameters grow faster.  Shoot growth rates vary through time in a more complex manner with the fastest growth happening about 10 days post harvest and the slowest growth around 25 days post harvest.
-
-### Partial effects plot for cross-basis function
-
-#### Make newdata
-
-```{r}
-testvals <- seq(min(Q_temp), max(Q_temp), length.out = 200)
-Q_temp_new <- matrix(mean(shootdf$temp_mean), nrow = length(testvals), ncol = ncol(Q_temp))
-L_new <- L[1:length(testvals), ]
-day_post_new <- rep(mean(shootdf$day_post), length(testvals))
-diameter_new <- rep(mean(shootdf$diameter), length(testvals))
-interharvest_id_new <- rep("newlevel", length(testvals))
-plant_new <- rep("newlevel", length(testvals))
-```
-
-#### predict loops
-
-```{r}
-resp_t <- array(dim = c(length(testvals), ncol(Q_temp_new)))
-rownames(resp_t) <- testvals
-
-#loop through columns of matrix, replace with testvals, predict fitted.
-for(i in 1:ncol(Q_temp_new)) {
-  P1_i <- Q_temp_new
-  P1_i[, i] <- testvals
-  resp_t[, i] <-
-    suppressWarnings( #new levels of random effects are on purpose
-      predict(
-        m_shoot_temp,
-        newdata = list(
-          Q_temp = P1_i,
-          L = L_new,
-          day_post = day_post_new,
-          diameter = diameter_new,
-          interharvest_id = interharvest_id_new,
-          plant = plant_new
-        ),
-        type = "response"
-      )
-    )
-}
-
-which(resp_t == min(resp_t), arr.ind = TRUE)
-resp_t[1,1]
-
-which(resp_t == max(resp_t), arr.ind = TRUE)
-resp_t[1,6]
-```
-
-At 1 day of lag:
-
-```{r}
-#optimum:
-which(resp_t == max(resp_t[ , 1, drop = FALSE]), arr.ind = TRUE)
-resp_t[129, 1, drop = FALSE]
-
-#min temp:
-resp_t[1, 1, drop = FALSE]
-
-#max temp:
-resp_t[nrow(resp_t), 1, drop = FALSE]
-```
-
-Make into a dataframe: 
-
-```{r}
-st_pd <-
-  resp_t %>% 
-  as_tibble(rownames = "x") %>% 
-  pivot_longer(cols = starts_with("V"),
-               names_to = "lag", names_prefix = "V", values_to = "fitted") %>% 
-  mutate(lag = as.double(lag), x = as.double(x))
-```
-
-
-# Precip only model
-
-```{r}
-anova.gam(m_shoot_precip)
-```
-
-## Extract data for plots
-
-```{r include=FALSE}
-#get data
-shoot_pd <- plot.gam(m_shoot_precip, seWithMean = TRUE, shift = coef(m_shoot_precip)[1])
-
-dph_p <- shoot_pd[[2]]
-dia_p <- shoot_pd[[3]]
-```
-
-
-### Partial effects plot for cross-basis function
-
-#### Make newdata
-
-```{r}
-testvals <- seq(min(Q_precip), max(Q_precip), length.out = 200)
-Q_precip_new <- matrix(mean(shootdf$precip_mm), nrow = length(testvals), ncol = ncol(Q_precip))
-L_new <- L[1:length(testvals), ]
-day_post_new <- rep(mean(shootdf$day_post), length(testvals))
-diameter_new <- rep(mean(shootdf$diameter), length(testvals))
-interharvest_id_new <- rep("newlevel", length(testvals))
-plant_new <- rep("newlevel", length(testvals))
-```
-
-#### predict loops
-
-```{r}
-resp_p <- array(dim = c(length(testvals), ncol(Q_precip_new)))
-rownames(resp_p) <- testvals
-
-#loop through columns of matrix, replace with testvals, predict fitted.
-for(i in 1:ncol(Q_precip_new)) {
-  P1_i <- Q_precip_new
-  P1_i[, i] <- testvals
-  resp_p[, i] <-
-    suppressWarnings( #new levels of random effects are on purpose
-      predict(
-        m_shoot_precip,
-        newdata = list(
-          Q_precip = P1_i,
-          L = L_new,
-          day_post = day_post_new,
-          diameter = diameter_new,
-          interharvest_id = interharvest_id_new,
-          plant = plant_new
-        ),
-        type = "response"
-      )
-    )
-}
-
-which(resp_p == min(resp_p), arr.ind = TRUE)
-resp_p[200, 1, drop = FALSE]
-
-which(resp_p == max(resp_p), arr.ind = TRUE)
-resp_p[200, 15, drop = FALSE]
-```
-
-At 1 day of lag:
-
-```{r}
-#max growth
-which(resp_p == max(resp_p[ , 1, drop = FALSE]), arr.ind = TRUE)
-resp_p[34, 1, drop = FALSE]
-
-#at min precip
-resp_p[1, 1, drop = FALSE]
-
-#at max precip
-resp_p[nrow(resp_p), 1, drop = FALSE]
-```
-
-make into dataframe:
-
-```{r}
-sp_pd <-
-  resp_p %>%
-  as_tibble(rownames = "x") %>%
-  pivot_longer(
-    cols = starts_with("V"),
-    names_to = "lag",
-    names_prefix = "V",
-    values_to = "fitted"
-  ) %>%
-  mutate(lag = as.double(lag), x = as.double(x)) 
-```
-
-
-
-
-
-
-# Plots
-
-## Covariates:
 
 Temperature:
 
@@ -494,41 +330,9 @@ dia_both_plot <-
 dia_both_plot
 ```
 
-Unclear why precip model covariates are consistently higher, but it might be a mistake.
+Shoots with larger diameters grow faster.  Shoot growth rates vary through time in a more complex manner with the fastest growth happening about 10 days post harvest and the slowest growth around 25 days post harvest.
 
-```{r}
-predict.gam(m_shoot_precip, terms = "s(diameter)", type = "terms")[1:10]>
-predict.gam(m_shoot_temp, terms = "s(diameter)", type = "terms")[1:10]
-
-predict.gam(m_shoot_precip, terms = "s(day_post)", type = "terms")[1:10]>
-predict.gam(m_shoot_temp, terms = "s(day_post)", type = "terms")[1:10]
-```
-newdata:
-
-```{r}
-newdata_temp = list(
-          # Q_precip = Q_precip_new,
-          Q_temp = Q_temp_new,
-          L = L_new,
-          day_post = day_post_new,
-          diameter = seq(min(shootdf$diameter), max(shootdf$diameter), length.out = length(interharvest_id_new)),
-          interharvest_id = interharvest_id_new,
-          plant = plant_new)
-newdata_precip = list(
-          Q_precip = Q_precip_new,
-          # Q_temp = Q_temp_new,
-          L = L_new,
-          day_post = day_post_new,
-          diameter = seq(min(shootdf$diameter), max(shootdf$diameter), length.out = length(interharvest_id_new)),
-          interharvest_id = interharvest_id_new,
-          plant = plant_new)
-
-predict.gam(m_shoot_precip, newdata = newdata_precip, type = "response")[190:200] ->precip_10
-predict.gam(m_shoot_temp, newdata = newdata_temp, type = "response")[190:200] -> temp_10
-precip_10>temp_10
-```
-
-hmmm.... precip is always larger, but these numbers don't match partial effects plots.  What's a parial effects plot??
+Unclear why partial effect from precip model are always higher than temp model.  I double-checked and its not a coding error as far as I can tell.
 
 ```{r}
 covars <-
@@ -545,11 +349,19 @@ save_plot(here("figs", "shoot_covariates.png"), covars, ncol = 2, nrow = 1, base
 ```
 
 ## Cross-basis plots
+### Generate data
+```{r}
+st_pd <- pred_shoots(Q = Q_temp, L = L, df = shootdf, colname = "temp_mean",
+                     model = m_shoot_temp)
+sp_pd <- pred_shoots(Q = Q_precip, L = L, df = shootdf, colname = "precip_mm",
+                     model = m_shoot_precip)
+```
 
 Uniform scale across plots:
 
 ```{r}
-growth_lims <- c(min(resp_p, resp_t), max(resp_p, resp_t))
+growth_lims <- c(min(st_pd$fitted, sp_pd$fitted),
+                 max(st_pd$fitted, sp_pd$fitted))
 ```
 
 ### Temperature cross-basis
