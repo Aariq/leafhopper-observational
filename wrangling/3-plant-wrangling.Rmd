@@ -205,11 +205,9 @@ shoot.data <- bind_rows(data.A.full, data.B.full) %>% left_join(dia.data2)
 
 
 ```{r}
-shoot_data_joined <-
+shoot_data_full <-
   full_join(shoot.data, weather_lags, by = "date") %>% 
   arrange(date)
-
-shoot_data_full <- shoot_data_joined %>% select(-temp_max, -temp_min)
 ```
 
 ```{r}
