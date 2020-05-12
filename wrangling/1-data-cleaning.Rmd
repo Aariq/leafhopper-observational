@@ -229,6 +229,23 @@ CAASweather <-
   clean_names()
 ```
 
+## May weather
+
+Later, I asked for weather form may 2017 and asked Hanna to enter it.  Unfortunately there are NAs for May 24th and 25th.  I'm not sure how to deal with that.
+
+```{r}
+library(lubridate)
+mayweather <- read_csv(here("data", "shaxian climate may 2017.csv"))
+mayweather %>% 
+  mutate(date = make_date(year = Year, month = Month, day = Day)) %>% 
+  group_by(date) %>% 
+  summarize(temp_mean_caas = mean(Temperature),
+            temp_max_caas = max(Temperature),
+            temp_min_caas = min(Temperature),
+            precip_caas_mm = sum(Precipitation))
+```
+
+
 ## Tidy weather data
 fix date column, rename columns
 ```{r}
