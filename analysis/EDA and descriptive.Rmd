@@ -48,16 +48,16 @@ df %>%
   group_by(field, interharvest.no) %>% 
   summarize(length = last(date) - first(date),
             mean_temp = mean(temp_mean),
-            mean_precip = mean(precip_mm),
-            num_rainy = sum(precip_mm >0)/n(),
-            median_precip = median(precip_mm),
+            mean_precip = mean(precip, na.rm = TRUE),
+            num_rainy = sum(precip > 0, na.rm = TRUE)/n(),
+            median_precip = median(precip, na.rm = TRUE),
             mean_density = mean(hoppers/n_leaves))
 
 df %>% 
     summarize(length = last(date) - first(date),
             mean_temp = mean(temp_mean),
-            mean_precip = mean(precip_mm),
-            max_precip = max(precip_mm),
+            mean_precip = mean(precip, na.rm = TRUE),
+            max_precip = max(precip, na.rm = TRUE),
             mean_density = mean(hoppers/n_leaves))
   
 ```
@@ -108,7 +108,7 @@ ggplot(df, aes(x = date, y = hoppers/n_leaves, group = plant)) +
 ```{r}
 weatherdf <- 
   df %>% group_by(date) %>% 
-  summarize(precip_mm = first(precip_mm),
+  summarize(precip_mm = first(precip),
             temp_mean = first(temp_mean),
             temp_min = first(temp_min),
             temp_max = first(temp_max))
@@ -141,12 +141,18 @@ save_plot(here("figs", "exploratory.png"), plot1, base_height = 7, base_aspect_r
 
 
 # Correlation / concurvity supplementary plot
+```{r}
+shootdf <- read_rds(here("data", "cleaned", "shoots.rds"))
+library(dlnm)
+```
 
 ```{r}
 Q_temp <-
   shootdf %>% 
   select(starts_with("temp_lag")) %>% 
   as.matrix()
+
+# is.na(Q_temp) %>% colSums()
 
 Q_precip <-
   shootdf %>%
@@ -156,6 +162,7 @@ Q_precip <-
 L <- matrix(1:(ncol(Q_temp)), nrow(Q_temp), ncol(Q_temp), byrow = TRUE)
 # head(L)
 ```
+
 
 ```{r}
 m_shoots <- 
@@ -180,6 +187,7 @@ m_shoots <-
 ```
 
 ```{r eval = FALSE}
+#is this because of the NAs?
 concurvity(m_shoots, full = TRUE)
 # concurvity(m_shoots, full = FALSE)
 ```
@@ -214,9 +222,9 @@ not sure why different
 weatherdf %>% 
   summarize(temp_grandmean = mean(temp_mean),
             temp_sd = sd(temp_mean),
-            precip_mean = mean(precip_mm),
-            precip_sd = sd(precip_mm),
-            rainy_days_percent = sum(precip_mm >0)/n())
+            precip_mean = mean(precip_mm, na.rm = TRUE),
+            precip_sd = sd(precip_mm, na.rm = TRUE),
+            rainy_days_percent = sum(precip_mm >0, na.rm = TRUE)/n())
 ```
 
 ```{r}

@@ -12,6 +12,7 @@ output:
 ---
 ```{r}
 library(tidyverse)
+library(readxl)
 library(here)
 library(lubridate)
 library(glue)
@@ -23,18 +24,25 @@ conflict_prefer("lag", "dplyr")
 
 # Purpose
 
-Here I join all the sources of weather data and create lagged temperature and preicipitation variables.
+There are essentially two sources of data I will use in this document.  1) the data taken *on site* at Shanfu Tea Company, by me, and 2) local weather station data.  The on-site data spans most of June and July and is hourly temperature data from a HOBO logger and daily precipitation data (from only mid-June onwards) from a rain gauge.  The local weather station data is transcribed from hand-written data sheets sent to me as images by Dr. Han and extends backwards in time to May.  I will wrangle both data sources and compare them.
+
+To fill in a couple of NAs, I'll use a third data source---county-level data provided by Dr. Han.  He said this is less accurate than the local weather station data, but it will be useful for a couple of missing values in the local precip data.
 
 # Read in data
 
 ```{r}
 hobo <- read_rds(here("data", "cleaned", "daily-temps-hobo.rds"))
-caas <- read_rds(here("data", "cleaned", "weather-caas.rds"))
 rain_gauge <- read_rds(here("data", "cleaned", "rain-gauge.rds"))
-caas_sub <-
-  caas %>%
-    select(date, precip_caas_mm, temp_mean_caas, temp_max_caas, temp_min_caas, sun_hrs, rh) %>%
-  filter(year(date) == 2017)
+
+caas_weather <- read_rds(here("data", "cleaned", "daily-weather-caas.rds"))
+county_weather <- 
+  read_excel(here("data", "Shaxian climate data in 2016-2017.xlsx"), skip = 1,
+             col_types = c("date", "numeric", "numeric", "numeric", "numeric", "numeric", "numeric")) %>%
+  filter(!is.na(Date)) %>% 
+  mutate(date = as.Date(Date),
+         precip = `rainfall (0.1 mm)`*0.1) %>% 
+  filter(date > ymd("2017-05-01")) %>% 
+  select(-Date, - `rainfall (0.1 mm)`)
 ```
 
 # Join Data Sources
@@ -43,30 +51,80 @@ CAAS weather station data and on-site hobo data logger
 
 ```{r}
 temperature <-
-  full_join(caas_sub, hobo, by = "date") %>% 
-    mutate(temp_mean = ifelse(is.na(temp_mean), temp_mean_caas, temp_mean),
-         temp_max = ifelse(is.na(temp_max), temp_max_caas, temp_max),
-         temp_min = ifelse(is.na(temp_min), temp_min_caas, temp_min)) %>% 
-    arrange(date) %>% 
-    select(-matches("caas"))
+  full_join(caas_weather, hobo, by = "date")
 ```
 
-I'll just use the CAAS weather station precip data.  It's correlated to the rain gauge data, but covers a longer time span.  It seems like all the CAAS precip data is higher than the rain gauge, so I'll just use it instead of prepending the rain gauge data.
-
-TODO: look into using interpolated rainfall data instead.
+Join rain gauge data
 
 ```{r}
-precip <-
-  caas_sub %>% 
-  select(date, "precip_mm" = precip_caas_mm) %>% 
-  arrange(date)
+weather_full <- full_join(temperature, rain_gauge, by = "date")
 ```
 
-join modified weather data now
+# Compare data sources
+
+I just want to check how reliable the data sources are by plotting them together
+
+## Temperature comparison
 
 ```{r}
-weather <- full_join(temperature, precip, by = "date") %>% arrange(date)
+ggplot(weather_full, aes(x = date)) +
+  geom_line(aes(y = temp_mean_caas), color = "red") +
+  geom_line(aes(y = temp_mean), color = "darkred") + 
+  labs(y = "mean temp (ºC)")
 ```
+Tempreature data from weather station matches HOBO data logger nearly perfectly.  That means I can use HOBO data for the period I have it, and prepend with weather station data.  This could be a supplemental figure.
+
+
+## Precipitation comparison
+
+I think the units for one of these sources must be wrong.  I'm confused.
+
+```{r}
+ggplot(weather_full, aes(x = date)) +
+  geom_line(aes(y = precip_caas_mm), color = "blue") +
+  geom_line(aes(y = precip_mm/100), color = "purple") +#rain gauge must be in cm, not mm...
+  geom_line(data = county_weather, aes(x = date, y = precip), color = "darkgreen")
+```
+
+Well, these don't match up as well, but I really have no choice other than to use the weather station data since the rain gauge data is so limited.
+
+# Combine data sources
+
+For temperature, I'll use the HOBO data and prepend with CAAS weather station data.  For precipitation, I'll use only the CAAS weather station data.
+
+```{r}
+weather <- 
+  weather_full %>% 
+  #cutoff at last date of experiment
+  filter(date <= ymd("2017-07-24")) %>% 
+  mutate(temp_mean = ifelse(is.na(temp_mean), temp_mean_caas, temp_mean),
+         temp_min = ifelse(is.na(temp_min), temp_min_caas, temp_min),
+         temp_max = ifelse(is.na(temp_max), temp_max_caas, temp_max)) %>% 
+  select(date, temp_mean, temp_min, temp_max, precip = precip_caas_mm)
+```
+
+## Dealing with missing values
+
+```{r}
+weather %>% filter(is.na(temp_mean) | is.na(precip))
+```
+```{r}
+rain_gauge %>% filter(date %within% interval(ymd("2017-06-27"), ymd("2017-06-28")))
+county_weather %>% filter(date %within% interval(ymd("2017-06-27"), ymd("2017-06-28")))
+```
+
+05-24 and 05-25 have NAs for temperature because the system was down durring parts of those days.  There's the possibility that I can simply filter my data to have a cutoff so no temperature data before the 23rd is used if I can't figure out how to deal with NAs.
+
+06-27 and 06-28 have NAs for precip.  It's unclear from the raw data sheet if the precip measurments were 0's or not recorded for this date.  According to the county level data, it did rain, so I'll swap those data in.
+
+```{r}
+weather <- weather %>% 
+  mutate(precip = ifelse(date == ymd("2017-06-27"), 0.75, precip)) %>%
+  mutate(precip = ifelse(date == ymd("2017-06-28"), 0.5, precip))
+```
+
+
+
 
 # Create lagged variables
 
@@ -83,11 +141,11 @@ temp_min_lags <- map_dfc(1:nlags, ~lag(weather$temp_min, .x)) %>%
 temp_max_lags <- map_dfc(1:nlags, ~lag(weather$temp_max, .x)) %>% 
   set_names(glue("temp_max_lag{1:nlags}"))
 
-precip_lags <- map_dfc(1:nlags, ~lag(weather$precip_mm, .x)) %>%
+precip_lags <- map_dfc(1:nlags, ~lag(weather$precip, .x)) %>%
   set_names(glue("precip_lag{1:nlags}"))
 
 weather_lags <- bind_cols(weather, temp_lags, temp_min_lags, temp_max_lags, precip_lags) %>% 
-  select(date, starts_with("temp_"), starts_with("precip_"))
+  select(date, starts_with("temp"), starts_with("precip"))
 weather_lags
 ```
 

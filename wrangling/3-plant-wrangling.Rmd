@@ -206,12 +206,14 @@ shoot.data <- bind_rows(data.A.full, data.B.full) %>% left_join(dia.data2)
 
 ```{r}
 shoot_data_full <-
-  full_join(shoot.data, weather_lags, by = "date") %>% 
+  left_join(shoot.data, weather_lags, by = "date") %>% 
   arrange(date)
 ```
 
+Because of the missing values in the temperature data, I think I'll just limit my dataset to only include things 15 days after those NAs.
+
 ```{r}
-shoot_data_full
+shoot_data_full <- shoot_data_full %>% filter(date > ymd("2017-06-09"))
 ```
 
 ## Pre-treatment
@@ -256,7 +258,8 @@ shoot.data5 <-
 shoot.data6 <- 
   shoot.data5 %>% 
   filter(!is.na(growth)) %>% 
-  filter(!is.na(diameter))
+  filter(!is.na(diameter)) %>% 
+  mutate(interharvest_id = as.factor(interharvest_id))
 
 shootdf <- shoot.data6 %>%
   select(
@@ -279,7 +282,7 @@ shootdf <- shoot.data6 %>%
 ```
 ```{r}
 shootdf
-# skimr::skim(shootdf)
+skimr::skim(shootdf)
 ```
 
 # Export Shoot Growth Data

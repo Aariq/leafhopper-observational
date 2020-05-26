@@ -213,62 +213,6 @@ write_rds(temp.data, here("data", "cleaned", "hourly-temps-hobo.rds"))
 write_rds(daily.temps, here("data", "cleaned", "daily-temps-hobo.rds"))
 ```
 
-# Weather data from Dr. Han
-Dr. Han sent me weather data by day (not hour) rounded to the nearest 0.5
-
-## Import weather data
-```{r}
-CAASweather <-
-  read_xlsx(
-    here("data", "Shaxian climate data in 2016-2017.xlsx"),
-    skip = 1,
-    col_types = c("date",
-                  rep("numeric", 6))
-  ) %>%
-  slice(1:(n() - 2)) %>% 
-  clean_names()
-```
-
-## May weather
-
-Later, I asked for weather form may 2017 and asked Hanna to enter it.  Unfortunately there are NAs for May 24th and 25th.  I'm not sure how to deal with that.
-
-```{r}
-library(lubridate)
-mayweather <- read_csv(here("data", "shaxian climate may 2017.csv"))
-mayweather %>% 
-  mutate(date = make_date(year = Year, month = Month, day = Day)) %>% 
-  group_by(date) %>% 
-  summarize(temp_mean_caas = mean(Temperature),
-            temp_max_caas = max(Temperature),
-            temp_min_caas = min(Temperature),
-            precip_caas_mm = sum(Precipitation))
-```
-
-
-## Tidy weather data
-fix date column, rename columns
-```{r}
-CAASweather.tidy <-
-  CAASweather %>%
-  rename(
-    temp_mean_caas = mean_temperature_o_c,
-    temp_max_caas = highest_tem,
-    temp_min_caas = lowest_tem,
-    sun_hrs = shinetime_h,
-    rh = relative_humidity_percent,
-    precip_caas_mm = rainfall_0_1_mm
-  ) %>% 
-  mutate(date = as_date(date))
-# anyNA(CAASweather.tidy)
-```
-
-export
-
-```{r}
-write_rds(CAASweather.tidy, here("data", "cleaned", "weather-caas.rds"))
-```
-
 # Rain gauge data
 
 I measured and emptied the rain guage in the morning, so it's actually the previous day's rain.
@@ -289,52 +233,34 @@ write_rds(rain_gauge, here("data", "cleaned", "rain-gauge.rds"))
 ```
 
 
-# Checking data reliability
-So, I only have HOBO temp data starting the first day of the experiment and only have rain gauge data from a small part of the experiment.  I'd like to fill in the gaps with other data sources so I can use lagged data variables.  But I want to check here if that's a legit thing to do.
+# CAAS weather data
 
-
-## Can I use CAAS precip data?
+From Dr. Han
 
 ```{r}
-CAAS_precip <- 
-  CAASweather.tidy %>%
-  select(date, precip_caas_mm)
+caas_raw <- read_excel(here("data", "weather station near site data.xlsx"), na = "NA")
+caas_hourly <-
+  caas_raw %>% 
+  mutate(date = make_date(year = Year, month = Month, day = Day),
+         Precipitation_mm = Precipitation * 0.1) %>% #units of raw data are in 0.1 mm
+  select(date, Hour, Temperature, Precipitation_mm) %>%
+  arrange(date)
 
-precip_compare <- full_join(
-  rain_gauge,
-  CAAS_precip
-) 
+range(caas$date)
 
-precip_compare %>% 
-  pivot_longer(-date, names_to = "source", values_to = "precip") %>% 
-  filter(year(date) == 2017) %>% 
-ggplot(aes(x = date, y = precip, color = source)) +
-  geom_line() +
-  geom_point(size = 1) +
-  theme_bw()
+caas_daily <-
+  caas_hourly %>% 
+  group_by(date) %>% 
+  summarize(temp_mean_caas = mean(Temperature),
+            temp_min_caas = min(Temperature),
+            temp_max_caas = max(Temperature),
+            precip_caas_mm = sum(Precipitation_mm))
 ```
 
-Actually, now that I've correctly lagged the rain guage data, it seems kinda close (although not sure if I should multiply by 10 or not.)
+
+export
 
 ```{r}
-test <- precip_compare %>% 
-  filter(!is.na(precip_mm))
-cor.test(test$precip_mm, test$precip_caas_mm)
+write_rds(caas_daily, here("data", "cleaned", "daily-weather-caas.rds"))
+# write_rds(caas_hourly, here("data", "cleaned", "hourly-weather-caas.rds")) #currently unused.
 ```
-
-OK, that's good.  I'll use it!  But becasue the scale seems kinda different, I should just use only the CAAS numbers. I think.
-
-## Can I use CAAS temperature data?
-
-```{r}
-full_join(daily.temps, CAASweather.tidy) %>%
-  arrange(date) %>% 
-  filter(year(date) == 2017) %>% 
-  ggplot(aes(x = date)) +
-  geom_line(aes(y = temp_mean_caas), color = "blue") +
-  geom_point(aes(y = temp_mean_caas), color = "blue") +
-  geom_line(aes(y = temp_mean), color = "red") +
-  geom_point(aes(y = temp_mean), color = "red")
-```
-
-Oh, yeah, this is fine.  No correlation test needed. But unfortunately it's only 2 days of extra data.
