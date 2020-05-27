@@ -215,7 +215,7 @@ write_rds(daily.temps, here("data", "cleaned", "daily-temps-hobo.rds"))
 
 # Rain gauge data
 
-I measured and emptied the rain guage in the morning, so it's actually the previous day's rain.
+I measured and emptied the rain gauge in the morning, so it's actually the previous day's rain.
 
 ```{r}
 rain_gauge <-
@@ -241,12 +241,11 @@ From Dr. Han
 caas_raw <- read_excel(here("data", "weather station near site data.xlsx"), na = "NA")
 caas_hourly <-
   caas_raw %>% 
-  mutate(date = make_date(year = Year, month = Month, day = Day),
-         Precipitation_mm = Precipitation * 0.1) %>% #units of raw data are in 0.1 mm
-  select(date, Hour, Temperature, Precipitation_mm) %>%
+  mutate(date = make_date(year = Year, month = Month, day = Day)) %>% 
+  select(date, Hour, Temperature, Precipitation_mm = Precipitation) %>%#units are in mm.
   arrange(date)
 
-range(caas$date)
+range(caas_hourly$date)
 
 caas_daily <-
   caas_hourly %>% 

@@ -40,7 +40,7 @@ county_weather <-
              col_types = c("date", "numeric", "numeric", "numeric", "numeric", "numeric", "numeric")) %>%
   filter(!is.na(Date)) %>% 
   mutate(date = as.Date(Date),
-         precip = `rainfall (0.1 mm)`*0.1) %>% 
+         precip = `rainfall (0.1 mm)`) %>% #pretty sure units are in mm and this just means they were measured out to 0.1 mm.
   filter(date > ymd("2017-05-01")) %>% 
   select(-Date, - `rainfall (0.1 mm)`)
 ```

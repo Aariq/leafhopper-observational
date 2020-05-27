@@ -141,14 +141,6 @@ hoppers6 <-
   mutate(plant = paste0(field, plant))
 ```
 
-### Filter dates
-
-Because of missing values in the temperature data, I think I'll only use data points collected 15 days after those missing values and beyond.
-
-```{r}
-hoppers6 <- filter(hoppers6, date > ymd("2017-06-09"))
-```
-
 
 # Write to file
 

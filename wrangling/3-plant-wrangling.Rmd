@@ -210,11 +210,6 @@ shoot_data_full <-
   arrange(date)
 ```
 
-Because of the missing values in the temperature data, I think I'll just limit my dataset to only include things 15 days after those NAs.
-
-```{r}
-shoot_data_full <- shoot_data_full %>% filter(date > ymd("2017-06-09"))
-```
 
 ## Pre-treatment
 1. Create variable for # days post harvest and variable for start date.
@@ -246,6 +241,7 @@ shoot.data4 <- shoot.data3 %>% filter(interharvest_id != "B1")
 
 
 5. Remove outliers
+
 ```{r}
 shoot.data5 <-
   shoot.data4 %>%

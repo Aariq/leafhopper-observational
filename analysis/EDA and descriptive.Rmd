@@ -19,6 +19,7 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ```{r packages, include=FALSE}
 library(tidyverse)
+library(lubridate)
 library(here)
 library(patchwork)
 library(cowplot)
@@ -145,17 +146,25 @@ save_plot(here("figs", "exploratory.png"), plot1, base_height = 7, base_aspect_r
 shootdf <- read_rds(here("data", "cleaned", "shoots.rds"))
 library(dlnm)
 ```
+### Filter dates
+
+Because of missing values in the temperature data, I think I'll only use data points collected 15 days after those missing values and beyond.
+
+```{r}
+shootdf2 <- filter(shootdf, date > ymd("2017-06-09"))
+```
+
 
 ```{r}
 Q_temp <-
-  shootdf %>% 
+  shootdf2 %>% 
   select(starts_with("temp_lag")) %>% 
   as.matrix()
 
 # is.na(Q_temp) %>% colSums()
 
 Q_precip <-
-  shootdf %>%
+  shootdf2 %>%
   select(starts_with("precip_lag")) %>% 
   as.matrix()
 
@@ -181,7 +190,7 @@ m_shoots <-
           ) +
         s(day_post, bs = "cs") + s(diameter, bs = "cs") + #co-variates
         s(interharvest_id, bs = "re") + s(plant, bs = "re"), #random effects
-      data = shootdf,
+      data = shootdf2,
       family = scat, #because residuals are very leptokurtic w/ gaussian
       method = "REML")
 ```
@@ -189,7 +198,7 @@ m_shoots <-
 ```{r eval = FALSE}
 #is this because of the NAs?
 concurvity(m_shoots, full = TRUE)
-# concurvity(m_shoots, full = FALSE)
+concurvity(m_shoots, full = FALSE)
 ```
 
 Precip and temp are concurve meaning they might be redundant in the model.  This makes sense as temperature and precip are generally correlated to some extent.
@@ -203,7 +212,7 @@ concurvity_p <-
   labs(x = "Precipitation (mm)", y = "Mean Temperature (ºC)") +
   theme_bw()
 concurvity_p
-# save_plot(here("figs", "plotS1.png"), concurvity_p)
+save_plot(here("figs", "plotS1.png"), concurvity_p)
 ```
 
 ```{r}
@@ -214,7 +223,7 @@ anova.gam(test)
 plot.gam(test,residuals = TRUE, cex = 4, shift = coef(test)[1])
 ```
 
-not sure why different
+not sure why different.  Something about scaling?
 
 # Descriptives
 
