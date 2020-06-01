@@ -113,7 +113,6 @@ rain_gauge %>% filter(date %within% interval(ymd("2017-06-27"), ymd("2017-06-28"
 county_weather %>% filter(date %within% interval(ymd("2017-06-27"), ymd("2017-06-28")))
 ```
 
-05-24 and 05-25 have NAs for temperature because the system was down durring parts of those days.  There's the possibility that I can simply filter my data to have a cutoff so no temperature data before the 23rd is used if I can't figure out how to deal with NAs.
 
 06-27 and 06-28 have NAs for precip.  It's unclear from the raw data sheet if the precip measurments were 0's or not recorded for this date.  According to the county level data, it did rain, so I'll swap those data in.
 
@@ -123,7 +122,13 @@ weather <- weather %>%
   mutate(precip = ifelse(date == ymd("2017-06-28"), 0.5, precip))
 ```
 
+### Remove other NAs
 
+I'll remove the temperature NAs for 05-24 and 05-25.
+
+```{r}
+weather <- weather %>% filter(!is.na(temp_mean))
+```
 
 
 # Create lagged variables
@@ -144,10 +149,16 @@ temp_max_lags <- map_dfc(1:nlags, ~lag(weather$temp_max, .x)) %>%
 precip_lags <- map_dfc(1:nlags, ~lag(weather$precip, .x)) %>%
   set_names(glue("precip_lag{1:nlags}"))
 
-weather_lags <- bind_cols(weather, temp_lags, temp_min_lags, temp_max_lags, precip_lags) %>% 
-  select(date, starts_with("temp"), starts_with("precip"))
+#matrix defining the lag structure (needed because of missing days)
+L <- map_dfc(1:nlags, ~ as.integer(weather$date - lag(weather$date, .x))) %>% 
+  set_names(glue("L_{1:nlags}"))
+
+weather_lags <- bind_cols(weather, temp_lags, temp_min_lags, temp_max_lags, precip_lags, L) %>% 
+  select(date, starts_with("temp"), starts_with("precip"), starts_with ("L"))
 weather_lags
 ```
+
+
 
 # Write data
 

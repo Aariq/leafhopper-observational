@@ -32,6 +32,7 @@ conflict_prefer("here", "here")
 gathering of shoots by plant and date, and reading in of stem diameter data done in the shoot growth script. One challenge is that every inter-harvest period the shoots are re-set.  That's why in some places I've split by field and then recombined.
 
 # Read in data
+
 ```{r}
 growth <- read_rds(here("data", "cleaned", "shoot-growth.rds"))
 diameter <- read_rds(here("data", "cleaned", "shoot-diameter.rds"))
@@ -203,7 +204,6 @@ shoot.data <- bind_rows(data.A.full, data.B.full) %>% left_join(dia.data2)
 
 # Add weather data
 
-
 ```{r}
 shoot_data_full <-
   left_join(shoot.data, weather_lags, by = "date") %>% 
@@ -272,7 +272,8 @@ shootdf <- shoot.data6 %>%
     day_post,
     mean_day,
     starts_with("temp"),
-    starts_with("precip")
+    starts_with("precip"),
+    starts_with("L")
   ) %>%
   ungroup()
 ```
