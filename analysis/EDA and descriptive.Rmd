@@ -46,7 +46,7 @@ df <- read_rds(here("data", "cleaned", "hopper-weather.rds"))
 
 ```{r}
 df %>% 
-  group_by(field, interharvest.no) %>% 
+  group_by(interharvest_id) %>% 
   summarize(length = last(date) - first(date),
             mean_temp = mean(temp_mean),
             mean_precip = mean(precip, na.rm = TRUE),
@@ -71,8 +71,7 @@ df %>%
 plotdf <- df %>% 
   group_by(date, field) %>% 
   summarize(density = mean(hoppers / n_leaves),
-            interharvest.no = first(interharvest.no)) %>% 
-  mutate(harvest = paste0(field, interharvest.no)) %>% 
+            harvest = first(interharvest_id)) %>% 
   filter(harvest != "A4")
 ```
 
@@ -146,29 +145,25 @@ save_plot(here("figs", "exploratory.png"), plot1, base_height = 7, base_aspect_r
 shootdf <- read_rds(here("data", "cleaned", "shoots.rds"))
 library(dlnm)
 ```
-### Filter dates
-
-Because of missing values in the temperature data, I think I'll only use data points collected 15 days after those missing values and beyond.
-
-```{r}
-shootdf2 <- filter(shootdf, date > ymd("2017-06-09"))
-```
 
 
 ```{r}
 Q_temp <-
-  shootdf2 %>% 
+  shootdf %>% 
   select(starts_with("temp_lag")) %>% 
   as.matrix()
 
 # is.na(Q_temp) %>% colSums()
 
 Q_precip <-
-  shootdf2 %>%
+  shootdf %>%
   select(starts_with("precip_lag")) %>% 
   as.matrix()
 
-L <- matrix(1:(ncol(Q_temp)), nrow(Q_temp), ncol(Q_temp), byrow = TRUE)
+L <- 
+  shootdf %>% 
+  select(starts_with("L")) %>% 
+  as.matrix()
 # head(L)
 ```
 
@@ -190,7 +185,7 @@ m_shoots <-
           ) +
         s(day_post, bs = "cs") + s(diameter, bs = "cs") + #co-variates
         s(interharvest_id, bs = "re") + s(plant, bs = "re"), #random effects
-      data = shootdf2,
+      data = shootdf,
       family = scat, #because residuals are very leptokurtic w/ gaussian
       method = "REML")
 ```

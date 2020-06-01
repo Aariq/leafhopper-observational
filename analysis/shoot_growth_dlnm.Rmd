@@ -11,11 +11,6 @@ output:
     number_sections: yes
 ---
 
-#TODO
-
-- include conversion to factors in wrangling, not in this doc.
-
-
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 options(scipen = 4)
@@ -55,14 +50,6 @@ The goal is to model the effects of temperature and precipitation on plant growt
 
 ```{r}
 shootdf <- read_rds(here("data", "cleaned", "shoots.rds"))
-
-shootdf <- shootdf %>% 
-  separate(shoot_id, into = c("field", "harvest", "plant", "shoot"),
-           remove = FALSE, sep = "-") %>% 
-  mutate(plant = as.factor(paste0(field, plant)), 
-         interharvest_id = as.factor(interharvest_id)) %>% 
-  filter(!is.na(precip_lag15)) #get rid of shoots that don't have 15 days of data
-head(shootdf)
 ```
 
 Variables I'll be using:
@@ -86,7 +73,7 @@ ggplot(shootdf, aes(x=growth)) + geom_histogram(bins = 30)
 
 ## Setup
 
-Create matrices for temperature, precip, and lag.  Zero days lag doesn't make sense since measurements were taken in the morning.  Remove those
+Create matrices for temperature, precip, and lag.  Zero days lag doesn't make sense since measurements were taken in the morning.  Remove those by only using variables with "lag" in the name.
 
 ```{r}
 Q_temp <-
@@ -109,7 +96,10 @@ Q_precip <-
   select(starts_with("precip_lag")) %>% 
   as.matrix()
 
-L <- matrix(1:(ncol(Q_temp)), nrow(Q_temp), ncol(Q_temp), byrow = TRUE)
+L <-
+  shootdf %>% 
+  select(starts_with("L")) %>% 
+  as.matrix()
 # head(L)
 ```
 
@@ -178,7 +168,7 @@ m_shoot_precip <-
 ICtab(m_shoot_temp, m_shoot_min_temp, m_shoot_max_temp, m_shoot_precip)
 ```
 
-The precipitation model has the lowest AIC
+temperature models have the lowest AIC.  Min, max, mean all essentially interchangable.
 
 # Mean Temperature model
 
@@ -210,6 +200,8 @@ Same, still significant.
 ```{r}
 anova.gam(m_shoot_precip)
 ```
+
+In this one, the co-variate `day_post` isn't significant. Odd...
 
 # Plots
 
@@ -262,6 +254,7 @@ dia_t_plot <-
 
 dph_t_plot + dia_t_plot
 ```
+#hmm.. should probably force diameter to be more smoothed/linear.
 
 Precip:
 
@@ -357,13 +350,13 @@ save_plot(here("figs", "shoot_covariates.png"), covars, ncol = 2, nrow = 1, base
 ## Cross-basis plots
 ### Generate data
 ```{r}
-st_pd <- pred_shoots(Q = Q_temp, L = L, df = shootdf, colname = "temp_mean",
+st_pd <- pred_shoots(Q = Q_temp, lag = 15, df = shootdf, colname = "temp_mean",
                      model = m_shoot_temp)
-stmin_pd <- pred_shoots(Q = Q_min_temp, L = L, df = shootdf, colname = "temp_min",
+stmin_pd <- pred_shoots(Q = Q_min_temp, lag = 15, df = shootdf, colname = "temp_min",
                      model = m_shoot_min_temp)
-stmax_pd <- pred_shoots(Q = Q_max_temp, L = L, df = shootdf, colname = "temp_max",
+stmax_pd <- pred_shoots(Q = Q_max_temp, lag = 15, df = shootdf, colname = "temp_max",
                      model = m_shoot_max_temp)
-sp_pd <- pred_shoots(Q = Q_precip, L = L, df = shootdf, colname = "precip_mm",
+sp_pd <- pred_shoots(Q = Q_precip, lag = 15, df = shootdf, colname = "precip",
                      model = m_shoot_precip)
 ```
 

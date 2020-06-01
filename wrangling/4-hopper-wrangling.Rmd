@@ -137,15 +137,26 @@ hoppers6 <-
          mean_day = mean(day, na.rm = TRUE)) %>%
   ungroup() %>% 
   arrange(field, date) %>% 
-  filter(!(field == "B" & interharvest.no == 1)) %>% 
-  mutate(plant = paste0(field, plant))
+  filter(!(field == "B" & interharvest.no == 1)) 
+```
+
+### Final tidy up
+```{r}
+hoppers7 <- 
+  hoppers6 %>% 
+  #column type wrangling
+  mutate(plant = paste0(field, plant)) %>% 
+  mutate(interharvest_id = as.factor(paste0(field, interharvest.no)),
+         counter = as.factor(counter),
+         plant = as.factor(plant)) %>% 
+  select(date_time, date, day, day_post, field, interharvest_id, plant, counter, hoppers, n_leaves, temp_at_count, starts_with("temp_"), starts_with("precip"), starts_with("L"))
 ```
 
 
 # Write to file
 
 ```{r save hopper data}
-write_rds(hoppers6, here("data", "cleaned", "hopper-weather.rds"))
+write_rds(hoppers7, here("data", "cleaned", "hopper-weather.rds"))
 ```
 
 

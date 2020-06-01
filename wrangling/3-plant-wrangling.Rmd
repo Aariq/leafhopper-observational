@@ -249,23 +249,26 @@ shoot.data5 <-
 ```
 
 6. Remove NAs and rearrange columns
+Also, re-factor categorical labels a bit for random effectsd
 
 ```{r}
 shoot.data6 <- 
   shoot.data5 %>% 
   filter(!is.na(growth)) %>% 
   filter(!is.na(diameter)) %>% 
-  mutate(interharvest_id = as.factor(interharvest_id))
+  mutate(interharvest_id = as.factor(interharvest_id)) %>% 
+  separate(shoot_id, into = c("field", "harvest", "plant", "shoot"),
+           remove = FALSE, sep = "-") %>% 
+  mutate_at(vars(shoot_id, field, interharvest_id, plant, shoot), as.factor)
 
 shootdf <- shoot.data6 %>%
   select(
     date,
     shoot_id,
     field,
+    interharvest_id,
     plant,
     shoot,
-    interharvest.no,
-    interharvest_id,
     shoot_height,
     growth,
     diameter,

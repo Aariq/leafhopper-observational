@@ -53,12 +53,6 @@ The goal is to model the effects of temperature and precipitation on leafhoppers
 ```{r}
 hoppers <- read_rds(here("data", "cleaned", "hopper-weather.rds"))
 
-hoppers <- hoppers %>% 
-  mutate(interharvest_id = as.factor(paste0(field, interharvest.no)),
-         counter = as.factor(counter),
-         plant = as.factor(plant)) %>% 
-  filter(!is.na(precip_lag15)) #get rid of plants that don't have 15 days of data
-
 head(hoppers)
 # str(hoppers)
 ```
@@ -91,7 +85,10 @@ Q_precip <-
   select(starts_with("precip_lag")) %>% 
   as.matrix()
 
-L <- matrix(1:(ncol(Q_temp)), nrow(Q_temp), ncol(Q_temp), byrow = TRUE)
+L <- 
+  hoppers %>%
+  select(starts_with("L")) %>%
+  as.matrix()
 ```
 
 # Build the GAMs
@@ -109,6 +106,7 @@ m_hopper_temp <-
         ) +
         s(day_post, bs = "cs") +
         s(counter, bs = "re") + #no difference with random vs. fixed
+        # counter +
         s(interharvest_id, bs = "re") +
         s(plant, bs = "re"),
       family = poisson(),
@@ -125,6 +123,7 @@ m_hopper_min_temp <-
         ) +
         s(day_post, bs = "cs") +
         s(counter, bs = "re") + #no difference with random vs. fixed
+        # counter +
         s(interharvest_id, bs = "re") +
         s(plant, bs = "re"),
       family = poisson(),
@@ -141,6 +140,7 @@ m_hopper_max_temp <-
         ) +
         s(day_post, bs = "cs") +
         s(counter, bs = "re") + #no difference with random vs. fixed
+        # counter +
         s(interharvest_id, bs = "re") +
         s(plant, bs = "re"),
       family = poisson(),
@@ -157,6 +157,7 @@ m_hopper_precip <-
         ) +
         s(day_post, bs = "cs") +
         s(counter, bs = "re") + #no difference with random vs. fixed
+        # counter +
         s(interharvest_id, bs = "re") +
         s(plant, bs = "re"),
       family = poisson(),
@@ -259,11 +260,13 @@ plot(m_hopper_precip, all.terms = TRUE, pages = 1)
 
 ## Generate plot data
 
+I suspect that `pred_hoppers()` isn't working correctly now that I'm specifying the lag matrix explicitly.
+
 ```{r}
-ht_pd <- pred_hoppers(Q_temp, L, hoppers, "temp_mean", m_hopper_temp)
-htmin_pd <- pred_hoppers(Q_min_temp, L, hoppers, "temp_min", m_hopper_min_temp)
-htmax_pd <- pred_hoppers(Q_max_temp, L, hoppers, "temp_max", m_hopper_max_temp)
-hp_pd <- pred_hoppers(Q_precip, L, hoppers, "precip_mm", m_hopper_precip)
+ht_pd <- pred_hoppers(Q_temp, lag = 15, hoppers, "temp_mean", m_hopper_temp)
+htmin_pd <- pred_hoppers(Q_min_temp, lag = 15, hoppers, "temp_min", m_hopper_min_temp)
+htmax_pd <- pred_hoppers(Q_max_temp, lag = 15, hoppers, "temp_max", m_hopper_max_temp)
+hp_pd <- pred_hoppers(Q_precip, lag = 15, hoppers, "precip", m_hopper_precip)
 ```
 
 
@@ -289,7 +292,6 @@ hopper_temp_raster
 save_plot(here("figs", "hopper_temp_raster.png"), hopper_temp_raster)
 ```
 
-Cooler temperatures are good for leafhoppers.  Little discernable effect of lag.  Not sure how to interpret
 
 ## Minimum Temperature cross-basis
 
@@ -305,6 +307,8 @@ hopper_min_temp_raster <-
 hopper_min_temp_raster
 save_plot(here("figs", "hopper_min_temp_raster.png"), hopper_min_temp_raster)
 ```
+Recent cool temperatures bad for leafhoppers (it's cold out, they're less active?)
+Cool temps 16 days ago are good though?  Less data out past 15 days because of weird data structure.  I think it might be best to cut off predictions or extend lag...
 
 ## Maximum temperature cross-basis
 
@@ -320,7 +324,7 @@ hopper_max_temp_raster <-
 hopper_max_temp_raster
 save_plot(here("figs", "hopper_max_temp_raster.png"), hopper_max_temp_raster)
 ```
-
+Not much of a pattern with max temp.  I guess low temp 8 days ago.
 
 ## Precipitation cross-basis
 
@@ -336,9 +340,8 @@ hopper_precip_raster <-
 hopper_precip_raster
 save_plot(here("figs", "hopper_precip_raster.png"), hopper_precip_raster)
 ```
-Low precip at 5 and 11 days ago has negative effect on leafhoppers (dessication?)
 
-High precip has positive effect on leafhoppers
+High precip 10- 12 days ago has positive effect on leafhoppers
 
 
 ## Combine raster plots
