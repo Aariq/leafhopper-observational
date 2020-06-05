@@ -207,127 +207,83 @@ In this one, the co-variate `day_post` isn't significant. Odd...
 
 ## Covariates:
 
-Extract data from GAM:
+Extract data from GAMs
 
 ```{r include=FALSE}
-#get data
-shoot_pd <- plot.gam(m_shoot_precip, seWithMean = TRUE, shift = coef(m_shoot_precip)[1])
+make_df <- function(m, elements = 2:3){
+  pd <- plot.gam(m, seWithMean = TRUE)
 
-dph_p <- shoot_pd[[2]]
-dia_p <- shoot_pd[[3]]
+  df <- map(pd[elements],
+           ~{
+             tibble(x = .x$x,
+                    se = .x$se,
+                    fit = .x$fit + coef(m)[1])
+           }) %>%
+    set_names(map(pd[elements], ~pluck(.x, "xlab"))) %>% 
+    bind_rows(.id = "variable")
+
+  return(df)
+}
+
+make_df_raw <- function(m, elements = 2:3){
+  pd <- plot.gam(m)
+  
+  df <- map(pd[elements],
+            ~{
+              tibble(raw = .x$raw)
+            }) %>% 
+    set_names(map(pd[elements], ~.x$xlab)) %>% 
+    bind_rows(.id = "variable")
+  return(df)
+}
+
+
+covar_plot_data <- 
+  list(m_shoot_min_temp, m_shoot_temp, m_shoot_precip) %>% 
+  set_names("Minimum temp", "Mean temp", "Precipitation") %>% 
+  map_dfr(make_df, .id = "model")
+
+#raw values should be the same for all plots
+covar_raw_data <-
+  make_df_raw(m_shoot_min_temp)
 ```
 
-```{r include=FALSE}
-#pull plot data
-shoot_pd <- 
-  plot(m_shoot_temp, seWithMean = TRUE, shift = coef(m_shoot_temp)[1])
-
-dph_t <- shoot_pd[[2]]
-dia_t <- shoot_pd[[3]]
-```
-
-Temperature:
+Days post-harvest
 
 ```{r}
-# make plots
-dph_t_plot <-
-  tibble(x = dph_t$x, se = dph_t$se, y = dph_t$fit + coef(m_shoot_temp)[1]) %>% 
-  ggplot(aes(x, y)) + 
-  geom_line() +
-  geom_ribbon(aes(ymin = y-se, ymax = y+se), alpha = 0.2) +
-  geom_rug(aes(x = raw, y =y), data = tibble(raw = dph_t$raw, y = 0), sides = "b") +
-  scale_y_continuous("Shoot growth (cm/day)", limits = c(0,0.6)) +
-  scale_x_continuous("Days post harvest") +
+dph_plot <- 
+  covar_plot_data %>% 
+  filter(variable == "day_post") %>% 
+  ggplot(aes(x = x, y = fit, color = model)) +
+  geom_line(size = 1) +
+  geom_ribbon(aes(ymin = fit - se, ymax = fit + se), fill = "grey", linetype = 0, alpha = 0.5) +
+  geom_rug(data = covar_raw_data %>% filter(variable == "day_post"),
+           aes(y = 0, x = raw),
+           sides = "b",
+           color = "black",
+           alpha = 0.03) +
+  scale_y_continuous(limits = c(0, 0.6)) +
+  labs(x = "Days post harvest", y = "Shoot growth (cm/day)", color = "Model") +
   theme_bw()
-
-
-dia_t_plot <- 
-  tibble(x = dia_t$x, se = dia_t$se, y = dia_t$fit + coef(m_shoot_temp)[1]) %>% 
-  ggplot(aes(x, y)) + 
-  geom_line() +
-  geom_ribbon(aes(ymin = y-se, ymax = y+se), alpha = 0.2) +
-  geom_rug(aes(x = raw, y =y), data = tibble(raw = dia_t$raw, y = 0),
-           sides = "b", alpha = 0.1) +
-  scale_y_continuous("Shoot growth (cm/day)", limits = c(0,0.6)) +
-  scale_x_continuous("Diameter (mm)") +
-  theme_bw()
-
-dph_t_plot + dia_t_plot
-```
-#hmm.. should probably force diameter to be more smoothed/linear.
-
-Precip:
-
-```{r}
-#make plots 
-dia_p_plot <- 
-  tibble(x = dia_p$x, se = dia_p$se, y = dia_p$fit + coef(m_shoot_precip)[1]) %>% 
-  ggplot(aes(x, y)) + 
-  geom_line() +
-  geom_ribbon(aes(ymin = y-se, ymax = y+se), alpha = 0.2) +
-  geom_rug(aes(x = raw, y =y), data = tibble(raw = dia_p$raw, y = 0),
-           sides = "b", alpha = 0.1) +
-  scale_y_continuous("Shoot growth (cm/day)", limits = c(0,0.6)) +
-  scale_x_continuous("Diameter (mm)") +
-  theme_bw()
-
-dph_p_plot <- 
-  tibble(x = dph_p$x, se = dph_p$se, y = dph_p$fit + coef(m_shoot_precip)[1]) %>% 
-  ggplot(aes(x, y)) + 
-  geom_line() +
-  geom_ribbon(aes(ymin = y-se, ymax = y+se), alpha = 0.2) +
-  geom_rug(aes(x = raw, y =y), data = tibble(raw = dph_p$raw, y = 0),
-           sides = "b", alpha = 0.1) +
-  scale_y_continuous("Shoot growth (cm/day)", limits = c(0,0.6)) +
-  scale_x_continuous("Days post harvest") +
-  theme_bw()
-
-dph_p_plot + dia_p_plot
-```
-
-And combine co-variate plots
-
-```{r}
-dph_both <-
-  bind_rows(Precipitation = dph_p_plot$data, Temperature = dph_t_plot$data, .id = "predictor")
-dph_both_raw <-
-  bind_rows(Precipitation = tibble(raw = dph_p$raw, y = 0),
-            Temperature = tibble(raw = dph_t$raw, y = 0),
-            .id = "predictor")
-
-dph_both_plot <-
-  ggplot(dph_both, aes(x, y, color = predictor)) + 
-  geom_line() +
-  geom_ribbon(aes(ymin = y-se, ymax = y+se, group = predictor), alpha = 0.2, color = NA) +
-  geom_rug(aes(x = raw, y =y), data = dph_both_raw,
-           sides = "b", alpha = 0.1, color = "black") +
-  scale_y_continuous("Shoot growth (cm/day)", limits = c(0,0.6)) +
-  scale_x_continuous("Days post harvest") +
-  scale_color_manual("Model", values = c("Precipitation" = "blue", "Temperature" = "red")) +
-  theme_bw()
-dph_both_plot
 ```
 
 ```{r}
-dia_both <-
-  bind_rows(Precipitation = dia_p_plot$data, Temperature = dia_t_plot$data, .id = "predictor")
-dia_both_raw <-
-  bind_rows(Precipitation = tibble(raw = dia_p$raw, y = 0),
-            Temperature = tibble(raw = dia_t$raw, y = 0),
-            .id = "predictor")
-
-dia_both_plot <-
-  ggplot(dia_both, aes(x, y, color = predictor)) + 
-  geom_line() +
-  geom_ribbon(aes(ymin = y-se, ymax = y+se, group = predictor), alpha = 0.2, color = NA) +
-  geom_rug(aes(x = raw, y =y), data = dia_both_raw,
-           sides = "b", alpha = 0.1, color = "black") +
-  scale_y_continuous("Shoot growth (cm/day)", limits = c(0,0.6)) +
-  scale_x_continuous("Diameter (mm)") +
-  scale_color_manual("Model", values = c("Precipitation" = "blue", "Temperature" = "red")) +
+dia_plot <- 
+  covar_plot_data %>% 
+  filter(variable == "diameter") %>% 
+  ggplot(aes(x = x, y = fit, color = model)) +
+  geom_line(size = 1) +
+  geom_ribbon(aes(ymin = fit - se, ymax = fit + se), fill = "grey", linetype = 0, alpha = 0.5) +
+  geom_rug(data = covar_raw_data %>% filter(variable == "diameter"),
+           aes(y = 0, x = raw),
+           sides = "b",
+           color = "black",
+           alpha = 0.03) +
+  scale_y_continuous(limits = c(0, 0.6)) +
+  labs(x = "Stem Diameter (mm)", y = "Shoot growth (cm/day)", color = "Model") +
   theme_bw()
-dia_both_plot
 ```
+
 
 Shoots with larger diameters grow faster.  Shoot growth rates vary through time in a more complex manner with the fastest growth happening about 10 days post harvest and the slowest growth around 25 days post harvest.
 
@@ -335,8 +291,8 @@ Unclear why partial effect from precip model are always higher than temp model. 
 
 ```{r}
 covars <-
-  dia_both_plot + 
-  (dph_both_plot +
+  dia_plot + 
+  (dph_plot +
      theme(axis.title.y = element_blank(),
            axis.text.y = element_blank(),
            axis.ticks.y = element_blank())) + 
@@ -376,7 +332,7 @@ shoot_temp_raster <-
   ggplot(st_pd, aes(x = x, y = lag, z = fitted, fill = fitted)) +
   geom_raster(interpolate = TRUE) +
   geom_contour(color = "grey50", size = 0.4) +
-  scale_fill_viridis_c("Shoot growth \n(cm/day)", option = "A", limits = growth_lims) + 
+  scale_fill_viridis_c("Shoot growth\n(cm/day)", option = "A", limits = growth_lims) + 
   scale_y_continuous("Lag (days)", expand = c(0,0)) + 
   scale_x_continuous("Temperature (ºC)", expand = c(0,0)) +
   theme(text = element_text(size = 14), aspect.ratio = 1)
@@ -391,7 +347,7 @@ shoot_min_temp_raster <-
   ggplot(stmin_pd, aes(x = x, y = lag, z = fitted, fill = fitted)) +
   geom_raster(interpolate = TRUE) +
   geom_contour(color = "grey50", size = 0.4) +
-  scale_fill_viridis_c("Shoot growth \n(cm/day)", option = "A", limits = growth_lims) + 
+  scale_fill_viridis_c("Shoot growth\n(cm/day)", option = "A", limits = growth_lims) + 
   scale_y_continuous("Lag (days)", expand = c(0,0)) + 
   scale_x_continuous("Temperature (ºC)", expand = c(0,0)) +
   theme(text = element_text(size = 14), aspect.ratio = 1)
@@ -405,7 +361,7 @@ shoot_max_temp_raster <-
   ggplot(stmax_pd, aes(x = x, y = lag, z = fitted, fill = fitted)) +
   geom_raster(interpolate = TRUE) +
   geom_contour(color = "grey50", size = 0.4) +
-  scale_fill_viridis_c("Shoot growth \n(cm/day)", option = "A", limits = growth_lims) + 
+  scale_fill_viridis_c("Shoot growth\n(cm/day)", option = "A", limits = growth_lims) + 
   scale_y_continuous("Lag (days)", expand = c(0,0)) + 
   scale_x_continuous("Temperature (ºC)", expand = c(0,0)) +
   theme(text = element_text(size = 14), aspect.ratio = 1)
@@ -413,6 +369,23 @@ shoot_max_temp_raster
 ```
 
 ### Precip cross-basis
+```{r}
+sp_pd %>% 
+  filter(lag == 1) %>% 
+  filter(fitted == max(fitted))
+
+sp_pd %>% 
+  filter(lag == 1) %>% 
+  filter(x == min(x))
+
+sp_pd %>% 
+  filter(lag == 1) %>% 
+  filter(fitted == min(fitted))
+
+sp_pd %>% 
+  # filter(lag == 1) %>% 
+  filter(fitted == max(fitted))
+```
 
 Raster version:
 
@@ -421,7 +394,7 @@ shoot_precip_raster <-
   ggplot(sp_pd, aes(x = x, y = lag, z = fitted, fill = fitted)) +
   geom_raster(interpolate = TRUE) +
   geom_contour(color = "grey50", size = 0.4) +
-  scale_fill_viridis_c("Shoot growth \n(cm/day)", option = "A", limits = growth_lims) + 
+  scale_fill_viridis_c("Shoot growth\n(cm/day)", option = "A", limits = growth_lims) + 
   scale_y_continuous("Lag (days)", expand = c(0,0)) + 
   scale_x_continuous("Precipitation (mm)", expand = c(0,0)) +
   theme(text = element_text(size = 14), aspect.ratio = 1)
@@ -429,6 +402,13 @@ save_plot(here("figs", "shoot_precip_raster.png"), shoot_precip_raster)
 ```
 
 Combine raster plots
+```{r}
+shoot_min_temp_raster + shoot_temp_raster + shoot_precip_raster + guide_area() +
+  plot_layout(guides = "collect") + 
+  plot_annotation(tag_levels = "A") &
+  guides(fill = guide_colorbar(title.position = "left"))
+ggsave(here("figs", "shoot_crossbasis.png"))
+```
 
 ```{r}
 shoot_cbs <-

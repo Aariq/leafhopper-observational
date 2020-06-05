@@ -198,6 +198,8 @@ These are non-significant, so I won't include them in the paper figure.
 
 ```{r}
 plot.gam(m_hopper_temp, pages = 1, residuals = FALSE, all.terms = TRUE)
+plot.gam(m_hopper_min_temp, pages = 1, residuals = FALSE, all.terms = TRUE)
+plot.gam(m_hopper_max_temp, pages = 1, residuals = FALSE, all.terms = TRUE)
 ```
 
 # Minimum temperature
@@ -284,7 +286,7 @@ hopper_temp_raster <-
   ggplot(ht_pd, aes(x = x, y = lag, z = fitted, fill = fitted)) +
   geom_raster(interpolate = TRUE) +
   geom_contour(color = "grey50", size = 0.4) +
-  scale_fill_viridis_c("Leafhoppers \n per leaf", option = "A", limits = hopper_lim) + 
+  scale_fill_viridis_c("Leafhoppers\nper leaf", option = "A", limits = hopper_lim) + 
   scale_y_continuous("Lag (days)", expand = c(0,0)) + 
   scale_x_continuous("Temperature (ºC)", expand = c(0,0)) +
   theme(text = element_text(size = 14), aspect.ratio = 1)
@@ -300,7 +302,7 @@ hopper_min_temp_raster <-
   ggplot(htmin_pd, aes(x = x, y = lag, z = fitted, fill = fitted)) +
   geom_raster(interpolate = TRUE) +
   geom_contour(color = "grey50", size = 0.4) +
-  scale_fill_viridis_c("Leafhoppers \n per leaf", option = "A", limits = hopper_lim) + 
+  scale_fill_viridis_c("Leafhoppers\nper leaf", option = "A", limits = hopper_lim) + 
   scale_y_continuous("Lag (days)", expand = c(0,0)) + 
   scale_x_continuous("Temperature (ºC)", expand = c(0,0)) +
   theme(text = element_text(size = 14), aspect.ratio = 1)
@@ -317,7 +319,7 @@ hopper_max_temp_raster <-
   ggplot(htmax_pd, aes(x = x, y = lag, z = fitted, fill = fitted)) +
   geom_raster(interpolate = TRUE) +
   geom_contour(color = "grey50", size = 0.4) +
-  scale_fill_viridis_c("Leafhoppers \n per leaf", option = "A", limits = hopper_lim) + 
+  scale_fill_viridis_c("Leafhoppers\nper leaf", option = "A", limits = hopper_lim) + 
   scale_y_continuous("Lag (days)", expand = c(0,0)) + 
   scale_x_continuous("Temperature (ºC)", expand = c(0,0)) +
   theme(text = element_text(size = 14), aspect.ratio = 1)
@@ -333,7 +335,7 @@ hopper_precip_raster <-
   ggplot(hp_pd, aes(x = x, y = lag, z = fitted, fill = fitted)) +
   geom_raster(interpolate = TRUE) +
   geom_contour(color = "grey50", size = 0.4) +
-  scale_fill_viridis_c("Leafhoppers \n per leaf", option = "A", limits = hopper_lim) + 
+  scale_fill_viridis_c("Leafhoppers\nper leaf", option = "A", limits = hopper_lim) + 
   scale_y_continuous("Lag (days)", expand = c(0,0)) + 
   scale_x_continuous("Precipitation (mm)", expand = c(0,0)) +
   theme(text = element_text(size = 14), aspect.ratio = 1)
@@ -345,14 +347,18 @@ High precip 10- 12 days ago has positive effect on leafhoppers
 
 
 ## Combine raster plots
+Once patchwork is working again, do this:
 
 ```{r}
-hopper_cbs <- 
-  hopper_precip_raster + 
-  hopper_temp_raster + 
-  plot_layout(guide = "collect") + 
-  plot_annotation(tag_levels = "A")
+hopper_min_temp_raster +  hopper_temp_raster + hopper_precip_raster + guide_area() +
+  plot_layout(guides = "collect") +
+  plot_annotation(tag_levels = "A") &
+  guides(fill = guide_colorbar(title.position = "left"))
+ggsave(here("figs", "hopper_crossbasis.png"))
+```
 
+
+```{r}
 save_plot(here("figs", "hopper_crossbasis.png"), hopper_cbs,
           ncol = 2, nrow = 1, base_asp = 1)
 ```
