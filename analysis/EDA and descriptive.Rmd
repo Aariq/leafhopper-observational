@@ -22,7 +22,6 @@ library(tidyverse)
 library(lubridate)
 library(here)
 library(patchwork)
-library(cowplot)
 library(scales)
 library(mgcv)
 library(conflicted)
@@ -33,7 +32,7 @@ conflict_prefer("filter", "dplyr")
 
 Make a plot that shows leafhopper densities over time with harvests and maybe weather.
 
-Also a supplementary plot showing concurvity of temp and precip. (I guess I do a geom_smooth()?)
+Also a supplementary plot showing concurvity of temp and precip.
 
 # Load Data
 
@@ -133,10 +132,12 @@ temp_plot <-
   theme(axis.text.x.bottom = element_blank(),
         axis.title.x.bottom = element_blank())
 ```
+
 ```{r}
 plot1 <- precip_plot/temp_plot/densityplot + plot_layout(heights = c(2,2,4)) + plot_annotation(tag_levels = "A")
-plot1
-save_plot(here("figs", "exploratory.png"), plot1, base_height = 7, base_aspect_ratio = 1.25)
+plot1 & theme(text = element_text(size = 10))
+ggsave(here("figs", "exploratory.png"), width = 165, height = 150, units = "mm")
+ggsave(here("figs", "figure 1.eps"), width = 165, height = 150, units = "mm")
 ```
 
 
@@ -207,18 +208,16 @@ concurvity_p <-
   labs(x = "Precipitation (mm)", y = "Mean Temperature (ºC)") +
   theme_bw()
 concurvity_p
-save_plot(here("figs", "plotS1.png"), concurvity_p)
+ggsave(here("figs", "plotS1.png"), concurvity_p)
+ggsave(here("figs", "plotS1.tiff"), concurvity_p, width = 165, units = "mm")
 ```
 
 ```{r}
-
 test <-gam(temp_mean ~ s(precip_mm, bs = "cs"), data = weatherdf)
 gam.check(test)
 anova.gam(test)
-plot.gam(test,residuals = TRUE, cex = 4, shift = coef(test)[1])
 ```
 
-not sure why different.  Something about scaling?
 
 # Descriptives
 

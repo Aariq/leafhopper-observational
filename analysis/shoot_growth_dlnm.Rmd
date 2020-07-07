@@ -28,7 +28,6 @@ library(mgcv)
 library(dlnm)
 library(glue)
 library(colorspace)
-library(cowplot)
 library(patchwork)
 library(bbmle)
 
@@ -300,11 +299,13 @@ covars <-
 ```
 
 ```{r}
-save_plot(here("figs", "shoot_covariates.png"), covars, ncol = 2, nrow = 1, base_asp = 1.2)
+ggsave(here("figs", "shoot_covariates.png"), covars, width = 165, height = 80, units = "mm")
+ggsave(here("figs", "figure 4.tiff"), covars, width = 165, height = 80, units = "mm")
 ```
 
 ## Cross-basis plots
 ### Generate data
+
 ```{r}
 st_pd <- pred_shoots(Q = Q_temp, lag = 15, df = shootdf, colname = "temp_mean",
                      model = m_shoot_temp)
@@ -335,9 +336,9 @@ shoot_temp_raster <-
   scale_fill_viridis_c("Shoot growth\n(cm/day)", option = "A", limits = growth_lims) + 
   scale_y_continuous("Lag (days)", expand = c(0,0)) + 
   scale_x_continuous("Temperature (ºC)", expand = c(0,0)) +
-  theme(text = element_text(size = 14), aspect.ratio = 1)
+  theme(text = element_text(size = 12), aspect.ratio = 1)
 shoot_temp_raster
-save_plot(here("figs", "shoot_temp_raster.png"), shoot_temp_raster)
+# ggsave(here("figs", "shoot_temp_raster.png"), shoot_temp_raster)
 ```
 
 ### Min temperature cross-basis
@@ -350,7 +351,7 @@ shoot_min_temp_raster <-
   scale_fill_viridis_c("Shoot growth\n(cm/day)", option = "A", limits = growth_lims) + 
   scale_y_continuous("Lag (days)", expand = c(0,0)) + 
   scale_x_continuous("Temperature (ºC)", expand = c(0,0)) +
-  theme(text = element_text(size = 14), aspect.ratio = 1)
+  theme(text = element_text(size = 12), aspect.ratio = 1)
 shoot_min_temp_raster
 ```
 
@@ -364,11 +365,12 @@ shoot_max_temp_raster <-
   scale_fill_viridis_c("Shoot growth\n(cm/day)", option = "A", limits = growth_lims) + 
   scale_y_continuous("Lag (days)", expand = c(0,0)) + 
   scale_x_continuous("Temperature (ºC)", expand = c(0,0)) +
-  theme(text = element_text(size = 14), aspect.ratio = 1)
+  theme(text = element_text(size = 12), aspect.ratio = 1)
 shoot_max_temp_raster
 ```
 
 ### Precip cross-basis
+
 ```{r}
 sp_pd %>% 
   filter(lag == 1) %>% 
@@ -397,24 +399,17 @@ shoot_precip_raster <-
   scale_fill_viridis_c("Shoot growth\n(cm/day)", option = "A", limits = growth_lims) + 
   scale_y_continuous("Lag (days)", expand = c(0,0)) + 
   scale_x_continuous("Precipitation (mm)", expand = c(0,0)) +
-  theme(text = element_text(size = 14), aspect.ratio = 1)
-save_plot(here("figs", "shoot_precip_raster.png"), shoot_precip_raster)
+  theme(text = element_text(size = 12), aspect.ratio = 1)
+# ggsave(here("figs", "shoot_precip_raster.png"), shoot_precip_raster)
 ```
 
 Combine raster plots
 ```{r}
-shoot_min_temp_raster + shoot_temp_raster + shoot_precip_raster + guide_area() +
+shoot_cb <-
+  shoot_min_temp_raster + shoot_temp_raster + shoot_precip_raster + guide_area() +
   plot_layout(guides = "collect") + 
   plot_annotation(tag_levels = "A") &
   guides(fill = guide_colorbar(title.position = "left"))
-ggsave(here("figs", "shoot_crossbasis.png"))
-```
-
-```{r}
-shoot_cbs <-
-  shoot_precip_raster + 
-  shoot_temp_raster +
-  plot_layout(guide = "collect") + 
-  plot_annotation(tag_levels = "A")
-save_plot(here("figs", "shoot_crossbasis.png"), shoot_cbs, ncol = 2, nrow = 1, base_asp = 1)
+ggsave(here("figs", "shoot_crossbasis.png"), shoot_cb, width = 165, units = "mm")
+ggsave(here("figs", "figure 3.eps"), shoot_cb, width = 165, units = "mm")
 ```
