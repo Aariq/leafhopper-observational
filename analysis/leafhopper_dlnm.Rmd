@@ -318,7 +318,7 @@ hopper_max_temp_raster <-
   scale_x_continuous("Temperature (ºC)", expand = c(0,0)) +
   theme(text = element_text(size = 12), aspect.ratio = 1)
 hopper_max_temp_raster
-# ggsave(here("figs", "hopper_max_temp_raster.png"))
+ggsave(here("figs", "hopper_max_temp_raster.png"))
 ```
 Not much of a pattern with max temp.
 

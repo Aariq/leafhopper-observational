@@ -134,10 +134,10 @@ temp_plot <-
 ```
 
 ```{r}
-plot1 <- precip_plot/temp_plot/densityplot + plot_layout(heights = c(2,2,4)) + plot_annotation(tag_levels = "A")
-plot1 & theme(text = element_text(size = 10))
-ggsave(here("figs", "exploratory.png"), width = 165, height = 150, units = "mm")
-ggsave(here("figs", "figure 1.eps"), width = 165, height = 150, units = "mm")
+plot1 <- precip_plot/temp_plot/densityplot + plot_layout(heights = c(2,2,3.5)) + plot_annotation(tag_levels = "A") &
+  theme(text = element_text(size = 9))
+ggsave(here("figs", "exploratory.png"), plot1, width = 165, height = 150, units = "mm")
+ggsave(here("figs", "figure 1.eps"), plot1, width = 165, height = 150, units = "mm")
 ```
 
 

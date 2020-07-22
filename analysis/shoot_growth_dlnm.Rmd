@@ -250,10 +250,11 @@ covar_raw_data <-
 Days post-harvest
 
 ```{r}
-dph_plot <- 
+dph_plot <-
   covar_plot_data %>% 
   filter(variable == "day_post") %>% 
   ggplot(aes(x = x, y = fit, color = model)) +
+  # geom_point(data = shootdf, aes(y = growth, x = day_post), inherit.aes = FALSE, alpha = 0.05) +
   geom_line(size = 1) +
   geom_ribbon(aes(ymin = fit - se, ymax = fit + se), fill = "grey", linetype = 0, alpha = 0.5) +
   geom_rug(data = covar_raw_data %>% filter(variable == "day_post"),
@@ -367,6 +368,7 @@ shoot_max_temp_raster <-
   scale_x_continuous("Temperature (ºC)", expand = c(0,0)) +
   theme(text = element_text(size = 12), aspect.ratio = 1)
 shoot_max_temp_raster
+ggsave(here("figs", "shoot_max_temp_raster.png"), shoot_max_temp_raster)
 ```
 
 ### Precip cross-basis
