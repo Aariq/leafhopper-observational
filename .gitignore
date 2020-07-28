@@ -5,6 +5,7 @@
 *.nb.html
 *.icloud
 *.pages
+*.numbers
 ~$*.docx
 docs/
 data/weather data original.zip
