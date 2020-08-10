@@ -352,3 +352,51 @@ ggsave(here("figs", "hopper_crossbasis.png"), hopper_cb, width = 165, units = "m
 ggsave(here("figs", "figure 2.eps"), hopper_cb, width = 165, units = "mm")
 ```
 
+# Cross-sections
+
+Look at cross sections across temperature and precipitation gradients to make inferences about effects of climate variability. See: Rudgers, Jennifer A., Y. Anny Chung, Gregory E. Maurer, Douglas I. Moore, Esteban H. Muldavin, Marcy E. Litvak, and Scott L. Collins. “Climate Sensitivity Functions and Net Primary Production: A Framework for Incorporating Climate Mean and Variability.” Ecology 99, no. 3 (2018): 576–82. https://doi.org/10.1002/ecy.2136.
+
+
+## Mean Temp
+
+Strongest effect at 9 days lag.  Convex relationship, so increased variance around the mean would benefit leafhoppers
+
+```{r}
+ht_pd %>% 
+  filter(lag == 9) %>% 
+  ggplot(aes(x=x, y = fitted)) +
+  geom_line() +
+  geom_vline(aes(xintercept = 26.9), linetype = 2) +
+  ylim(hopper_lim) +
+  labs(x = "Temp (ºC)", y = "leafhopper density (insects/leaf)")
+```
+
+## Min Temp
+
+Strongest effect at 1 day lag.  Convex upward relationship also shows benefit of variance around the mean.
+
+```{r}
+htmin_pd %>% 
+  filter(lag == 1) %>% 
+  ggplot(aes(x =x, y = fitted)) +
+  geom_line() +
+  geom_vline(aes(xintercept = mean(hoppers$temp_min)), linetype = 2) +
+  ylim(hopper_lim) +
+  labs(x = "Temp (ºC)", y = "leafhopper density (insects/leaf)")
+  
+```
+
+## Precip
+
+Greatest effect at 12 days lag. Linear response, so not sensitive to increases in variance around mean.
+
+```{r}
+hp_pd %>% 
+  filter(lag == 12) %>% 
+  ggplot(aes(x = x, y = fitted)) +
+  geom_line() +
+  geom_vline(aes(xintercept = 6.9), linetype = 2) +
+  ylim(hopper_lim) +
+  labs(x = "Precip (mm)", y = "leafhopper density (insects/leaf)")
+```
+

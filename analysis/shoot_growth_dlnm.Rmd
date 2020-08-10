@@ -415,3 +415,47 @@ shoot_cb <-
 ggsave(here("figs", "shoot_crossbasis.png"), shoot_cb, width = 165, units = "mm")
 ggsave(here("figs", "figure 3.eps"), shoot_cb, width = 165, units = "mm")
 ```
+
+# Cross-sections
+
+Look at cross-sections to see how increases in climate variance might effect shoot growth. See: Rudgers, Jennifer A., Y. Anny Chung, Gregory E. Maurer, Douglas I. Moore, Esteban H. Muldavin, Marcy E. Litvak, and Scott L. Collins. “Climate Sensitivity Functions and Net Primary Production: A Framework for Incorporating Climate Mean and Variability.” Ecology 99, no. 3 (2018): 576–82. https://doi.org/10.1002/ecy.2136.
+
+## Mean temp
+
+Strongest effect at 1 day of lag.  Concave downward, so increased variance around mean would be detrimental to shoot growth.  Also convex at lag = 14 days, where there also seems to be somethign going on (probably spurrious though).
+
+```{r}
+st_pd %>% 
+  filter(lag == 1) %>% 
+  ggplot(aes(x = x, y = fitted)) +
+  geom_vline(aes(xintercept = 26.9), linetype = 2) +
+  geom_line() +
+  ylim(growth_lims)
+```
+
+## Min temp
+
+Relationship strongest at lag = 1.  Fairly linear response, so shoot growth not very sensitive to increased variation in min temp.
+
+```{r}
+stmin_pd %>% 
+  filter(lag == 1) %>% 
+  ggplot(aes(x = x, y = fitted)) +
+  geom_vline(aes(xintercept = mean(shootdf$temp_min)), linetype = 2) +
+  geom_line() +
+  ylim(growth_lims)
+```
+
+## Precip
+
+Relationship strongest at 1 day lag.  Concave downward, so increased variance in precip would be detrimental to shoot growth.
+
+```{r}
+sp_pd %>% 
+  filter(lag == 1) %>% 
+  ggplot(aes(x = x, y = fitted)) +
+  geom_line() +
+  geom_vline(aes(xintercept = 6.9), linetype = 2) +
+  ylim(growth_lims)
+```
+
