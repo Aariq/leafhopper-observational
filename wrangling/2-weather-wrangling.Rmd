@@ -10,7 +10,7 @@ output:
     toc_float: yes
     number_sections: yes
 ---
-```{r}
+```{r setup, message=FALSE, warning=FALSE}
 library(tidyverse)
 library(readxl)
 library(here)
@@ -52,6 +52,14 @@ CAAS weather station data and on-site hobo data logger
 ```{r}
 temperature <-
   full_join(caas_weather, hobo, by = "date")
+```
+```{r}
+cor.test(temperature$temp_mean_caas, temperature$temp_mean)
+temperature %>% 
+  transmute(temp_diff = temp_mean_caas - temp_mean) %>%
+  mutate(square_diff = temp_diff^2) %>% 
+  filter(complete.cases(.)) %>% 
+  summarize(RMSE = sqrt(mean(square_diff)))
 ```
 
 Join rain gauge data
