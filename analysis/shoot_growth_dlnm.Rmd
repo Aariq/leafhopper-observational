@@ -209,34 +209,6 @@ In this one, the co-variate `day_post` isn't significant. Odd...
 Extract data from GAMs
 
 ```{r include=FALSE}
-make_df <- function(m, elements = 2:3){
-  pd <- plot.gam(m, seWithMean = TRUE)
-
-  df <- map(pd[elements],
-           ~{
-             tibble(x = .x$x,
-                    se = .x$se,
-                    fit = .x$fit + coef(m)[1])
-           }) %>%
-    set_names(map(pd[elements], ~pluck(.x, "xlab"))) %>% 
-    bind_rows(.id = "variable")
-
-  return(df)
-}
-
-make_df_raw <- function(m, elements = 2:3){
-  pd <- plot.gam(m)
-  
-  df <- map(pd[elements],
-            ~{
-              tibble(raw = .x$raw)
-            }) %>% 
-    set_names(map(pd[elements], ~.x$xlab)) %>% 
-    bind_rows(.id = "variable")
-  return(df)
-}
-
-
 covar_plot_data <- 
   list(m_shoot_min_temp, m_shoot_temp, m_shoot_precip) %>% 
   set_names("Minimum temp", "Mean temp", "Precipitation") %>% 
@@ -424,38 +396,79 @@ Look at cross-sections to see how increases in climate variance might effect sho
 
 Strongest effect at 1 day of lag.  Concave downward, so increased variance around mean would be detrimental to shoot growth.  Also convex at lag = 14 days, where there also seems to be somethign going on (probably spurrious though).
 
-```{r}
-st_pd %>% 
+```{r fig.height=7, fig.width=5}
+a <- 
+  shoot_temp_raster +
+  geom_hline(aes(yintercept = 1), linetype = 1) +
+  geom_vline(aes(xintercept = 26.9), linetype = 2)
+
+b <- 
+  st_pd %>% 
   filter(lag == 1) %>% 
   ggplot(aes(x = x, y = fitted)) +
   geom_vline(aes(xintercept = 26.9), linetype = 2) +
   geom_line() +
-  ylim(growth_lims)
+  ylim(growth_lims) +
+  theme(text = element_text(size = 12), aspect.ratio = 1) +
+  labs(x = "Temperature (ºC)", y = "shoot growth\n(cm/day)")
+
+st_cross <- a/b &
+  plot_annotation(title = "Shoot growth vs. mean daily temperature",
+                  caption = "Concave relationship means that increase in\n variance around mean is detrimental to growth")
+ggsave(here("docs", "st_cross.png"), st_cross)
+st_cross
 ```
 
 ## Min temp
 
 Relationship strongest at lag = 1.  Fairly linear response, so shoot growth not very sensitive to increased variation in min temp.
 
-```{r}
-stmin_pd %>% 
+```{r fig.height=7, fig.width=5}
+a <- 
+  shoot_min_temp_raster +
+  geom_hline(aes(yintercept = 1), linetype = 1) +
+  geom_vline(aes(xintercept = mean(shootdf$temp_min)), linetype = 2)
+
+b <- stmin_pd %>% 
   filter(lag == 1) %>% 
   ggplot(aes(x = x, y = fitted)) +
   geom_vline(aes(xintercept = mean(shootdf$temp_min)), linetype = 2) +
   geom_line() +
-  ylim(growth_lims)
+  ylim(growth_lims) +
+  theme(text = element_text(size = 12), aspect.ratio = 1) +
+  labs(x = "Temperature (ºC)", y = "shoot growth\n(cm/day)")
+
+stmin_cross <- a/b &
+  plot_annotation(title = "Shoot growth vs. minimum daily temperature",
+                  caption = "Linear relationship means that shoot growth is \n relatively insensitive to increased variation around mean")
+stmin_cross
+ggsave(here("docs", "stmin_cross.png"), stmin_cross)
 ```
 
 ## Precip
 
 Relationship strongest at 1 day lag.  Concave downward, so increased variance in precip would be detrimental to shoot growth.
 
-```{r}
-sp_pd %>% 
+```{r fig.height=7, fig.width=5}
+a <- 
+  shoot_precip_raster +
+  geom_hline(aes(yintercept = 1), linetype = 1) +
+  geom_vline(aes(xintercept = 6.9), linetype = 2)
+  
+b <- 
+  sp_pd %>% 
   filter(lag == 1) %>% 
   ggplot(aes(x = x, y = fitted)) +
   geom_line() +
   geom_vline(aes(xintercept = 6.9), linetype = 2) +
-  ylim(growth_lims)
+  ylim(growth_lims) +
+  theme(text = element_text(size = 12), aspect.ratio = 1) +
+  labs(x = "Precipitation (mm)", y = "shoot growth\n(cm/day)")
+
+sp_cross <- a/b & 
+  plot_annotation(title = "Shoot growth vs. precipitation",
+                  caption = "Concave relationship means that increase in\n variance around mean is detrimental to growth")
+ggsave(here("docs", "sp_cross.png"), sp_cross)
+sp_cross
 ```
 
