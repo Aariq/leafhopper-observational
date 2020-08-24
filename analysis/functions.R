@@ -102,31 +102,3 @@ pred_shoots <- function(Q, lag, df, colname, model) {
     mutate(lag = as.double(lag), x = as.double(x)) 
   return(out)
 }
-
-# Extract plotting data from gam results
-make_df <- function(m, elements = 2:3){
-  pd <- plot.gam(m, seWithMean = TRUE, shift = coef(m)[1])
-  
-  df <- map(pd[elements],
-            ~{
-              tibble(x = .x$x,
-                     se = .x$se,
-                     fit = .x$fit + coef(m)[1])
-            }) %>%
-    set_names(map(pd[elements], ~pluck(.x, "xlab"))) %>% 
-    bind_rows(.id = "variable")
-  
-  return(df)
-}
-
-make_df_raw <- function(m, elements = 2:3){
-  pd <- plot.gam(m)
-  
-  df <- map(pd[elements],
-            ~{
-              tibble(raw = .x$raw)
-            }) %>% 
-    set_names(map(pd[elements], ~.x$xlab)) %>% 
-    bind_rows(.id = "variable")
-  return(df)
-}
