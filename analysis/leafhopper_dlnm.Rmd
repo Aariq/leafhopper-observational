@@ -288,8 +288,6 @@ ggsave(here("figs", "hopper_covariates.png"), dph_plot, width = 165, height = 13
 
 `visibly` pacakge can't handle these cross-basis smooths apparently.
 
-I suspect that `pred_hoppers()` isn't working correctly now that I'm specifying the lag matrix explicitly.
-
 ```{r}
 ht_pd <-
   pred_hoppers(Q_temp, lag = 15, hoppers, "temp_mean", m_hopper_temp)
