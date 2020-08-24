@@ -737,6 +737,18 @@
       "Repository": "CRAN",
       "Hash": "ce4f6271baa94776db692f1cb2055bee"
     },
+    "visibly": {
+      "Package": "visibly",
+      "Version": "0.2.8",
+      "Source": "GitHub",
+      "RemoteType": "github",
+      "RemoteHost": "api.github.com",
+      "RemoteUsername": "m-clark",
+      "RemoteRepo": "visibly",
+      "RemoteRef": "master",
+      "RemoteSha": "ae37cf458e7be4aa2322e8cea63ab8356a25dbd0",
+      "Hash": "8d37c2ca3160cfa0c04be2ae029931f4"
+    },
     "whisker": {
       "Package": "whisker",
       "Version": "0.4",
