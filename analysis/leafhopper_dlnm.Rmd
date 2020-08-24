@@ -27,6 +27,7 @@ library(dlnm)
 library(colorspace)
 library(bbmle)
 library(patchwork)
+library(visibly) #for ggplot figures from GAMs
 
 conflict_prefer("filter", "dplyr")
 conflict_prefer("here", "here")
@@ -172,9 +173,9 @@ Minimum temperature model "wins"
 ## Inspect the GAM
 
 ```{r}
-gam.check(m_hopper_temp)
 #check for overdispersion
 sum(residuals(m_hopper_temp, type = "pearson")^2) / df.residual(m_hopper_temp)
+plot_gam_check(m_hopper_temp)
 ```
 
 not overdispersed
@@ -189,12 +190,11 @@ Significant effect of plant (parametric factor), temperature, precip, days post 
 
 ## Plot regular smooths of covariates
 
-These are non-significant, so I won't include them in the paper figure.
-
 ```{r}
 plot.gam(m_hopper_temp, pages = 1, residuals = FALSE, all.terms = TRUE)
 plot.gam(m_hopper_min_temp, pages = 1, residuals = FALSE, all.terms = TRUE)
 plot.gam(m_hopper_max_temp, pages = 1, residuals = FALSE, all.terms = TRUE)
+plot.gam(m_hopper_precip, pages = 1, residuals = FALSE, all.terms = TRUE)
 ```
 
 # Minimum temperature
@@ -202,7 +202,7 @@ plot.gam(m_hopper_max_temp, pages = 1, residuals = FALSE, all.terms = TRUE)
 ## Inspect the GAM
 
 ```{r}
-gam.check(m_hopper_min_temp)
+plot_gam_check(m_hopper_min_temp)
 #check for overdispersion
 sum(residuals(m_hopper_min_temp, type = "pearson")^2) / df.residual(m_hopper_min_temp)
 ```
@@ -217,7 +217,7 @@ Min temp is significant
 
 # Maximum temperature
 ```{r}
-gam.check(m_hopper_max_temp)
+plot_gam_check(m_hopper_max_temp)
 #check for overdispersion
 sum(residuals(m_hopper_max_temp, type = "pearson")^2) / df.residual(m_hopper_max_temp)
 ```
@@ -233,7 +233,7 @@ max temp also highly significant.
 Inspect gam:
 
 ```{r}
-gam.check(m_hopper_precip)
+plot_gam_check(m_hopper_precip)
 ```
 
 
@@ -249,21 +249,59 @@ significant effect of precip, but not of date.
 Not significant, so these won't be in the paper
 
 ```{r}
-plot(m_hopper_precip, all.terms = TRUE, pages = 1)
+plot.gam(m_hopper_precip,
+         all.terms = TRUE,
+         pages = 1,
+         shift = coef(m_hopper_precip)[1]
+         )
 ```
 
 
 # Plots
 
+## Covaraiate
+
+Days post-harvest
+
+```{r}
+d <- list("Mean Temperature" = m_hopper_temp,
+         "Minimum Temperature" = m_hopper_min_temp,
+         "Precipitation" = m_hopper_precip) %>%
+  map(~plot_gam(.x, main_var = day_post))
+
+dph_plot <-
+  d %>%
+  map_df(~pluck(.x,"data"), .id = "model") %>% 
+  ggplot(aes(x = value, y = fit, color = model)) +
+  geom_ribbon(aes(ymin = ll, ymax = ul), 
+              fill = "grey", linetype = 0, alpha = 0.5) +
+  geom_line(size = 1) +
+  geom_rug(data = hoppers, aes(day_post), inherit.aes = FALSE, alpha = 0.03) +
+  labs(x = "Days post harvest", y = "Leafhoppers / leaf", color = "Model") +
+  theme_bw() +
+  theme(aspect.ratio = 1)
+dph_plot
+ggsave(here("figs", "hopper_covariates.png"), dph_plot, width = 165, height = 130, units = "mm")
+```
+
 ## Generate plot data
+
+`visibly` pacakge can't handle these cross-basis smooths apparently.
 
 I suspect that `pred_hoppers()` isn't working correctly now that I'm specifying the lag matrix explicitly.
 
 ```{r}
-ht_pd <- pred_hoppers(Q_temp, lag = 15, hoppers, "temp_mean", m_hopper_temp)
-htmin_pd <- pred_hoppers(Q_min_temp, lag = 15, hoppers, "temp_min", m_hopper_min_temp)
-htmax_pd <- pred_hoppers(Q_max_temp, lag = 15, hoppers, "temp_max", m_hopper_max_temp)
-hp_pd <- pred_hoppers(Q_precip, lag = 15, hoppers, "precip", m_hopper_precip)
+ht_pd <-
+  pred_hoppers(Q_temp, lag = 15, hoppers, "temp_mean", m_hopper_temp)
+
+htmin_pd <- 
+  pred_hoppers(Q_min_temp, lag = 15, hoppers, "temp_min", m_hopper_min_temp)
+
+htmax_pd <- 
+  pred_hoppers(Q_max_temp, lag = 15, hoppers, "temp_max", m_hopper_max_temp)
+
+hp_pd <-
+  pred_hoppers(Q_precip, lag = 15, hoppers, "precip", m_hopper_precip)
 ```
 
 
@@ -281,7 +319,9 @@ hopper_temp_raster <-
   ggplot(ht_pd, aes(x = x, y = lag, z = fitted, fill = fitted)) +
   geom_raster(interpolate = TRUE) +
   geom_contour(color = "grey50", size = 0.4) +
-  scale_fill_viridis_c("Leafhoppers\nper leaf", option = "A", limits = hopper_lim) + 
+  scale_fill_viridis_c("Leafhoppers\nper leaf",
+                       option = "A",
+                       limits = hopper_lim) + 
   scale_y_continuous("Lag (days)", expand = c(0,0)) + 
   scale_x_continuous("Temperature (ºC)", expand = c(0,0)) +
   theme(text = element_text(size = 12), aspect.ratio = 1)
@@ -297,7 +337,9 @@ hopper_min_temp_raster <-
   ggplot(htmin_pd, aes(x = x, y = lag, z = fitted, fill = fitted)) +
   geom_raster(interpolate = TRUE) +
   geom_contour(color = "grey50", size = 0.4) +
-  scale_fill_viridis_c("Leafhoppers\nper leaf", option = "A", limits = hopper_lim) + 
+  scale_fill_viridis_c("Leafhoppers\nper leaf",
+                       option = "A", 
+                       limits = hopper_lim) + 
   scale_y_continuous("Lag (days)", expand = c(0,0)) + 
   scale_x_continuous("Temperature (ºC)", expand = c(0,0)) +
   theme(text = element_text(size = 12), aspect.ratio = 1)
@@ -313,7 +355,9 @@ hopper_max_temp_raster <-
   ggplot(htmax_pd, aes(x = x, y = lag, z = fitted, fill = fitted)) +
   geom_raster(interpolate = TRUE) +
   geom_contour(color = "grey50", size = 0.4) +
-  scale_fill_viridis_c("Leafhoppers\nper leaf", option = "A", limits = hopper_lim) + 
+  scale_fill_viridis_c("Leafhoppers\nper leaf",
+                       option = "A",
+                       limits = hopper_lim) + 
   scale_y_continuous("Lag (days)", expand = c(0,0)) + 
   scale_x_continuous("Temperature (ºC)", expand = c(0,0)) +
   theme(text = element_text(size = 12), aspect.ratio = 1)
@@ -329,7 +373,9 @@ hopper_precip_raster <-
   ggplot(hp_pd, aes(x = x, y = lag, z = fitted, fill = fitted)) +
   geom_raster(interpolate = TRUE) +
   geom_contour(color = "grey50", size = 0.4) +
-  scale_fill_viridis_c("Leafhoppers\nper leaf", option = "A", limits = hopper_lim) + 
+  scale_fill_viridis_c("Leafhoppers\nper leaf",
+                       option = "A",
+                       limits = hopper_lim) + 
   scale_y_continuous("Lag (days)", expand = c(0,0)) + 
   scale_x_continuous("Precipitation (mm)", expand = c(0,0)) +
   theme(text = element_text(size = 12), aspect.ratio = 1)
@@ -351,52 +397,3 @@ hopper_cb <-
 ggsave(here("figs", "hopper_crossbasis.png"), hopper_cb, width = 165, units = "mm")
 ggsave(here("figs", "figure 2.eps"), hopper_cb, width = 165, units = "mm")
 ```
-
-# Cross-sections
-
-Look at cross sections across temperature and precipitation gradients to make inferences about effects of climate variability. See: Rudgers, Jennifer A., Y. Anny Chung, Gregory E. Maurer, Douglas I. Moore, Esteban H. Muldavin, Marcy E. Litvak, and Scott L. Collins. “Climate Sensitivity Functions and Net Primary Production: A Framework for Incorporating Climate Mean and Variability.” Ecology 99, no. 3 (2018): 576–82. https://doi.org/10.1002/ecy.2136.
-
-
-## Mean Temp
-
-Strongest effect at 9 days lag.  Convex relationship, so increased variance around the mean would benefit leafhoppers
-
-```{r}
-ht_pd %>% 
-  filter(lag == 9) %>% 
-  ggplot(aes(x=x, y = fitted)) +
-  geom_line() +
-  geom_vline(aes(xintercept = 26.9), linetype = 2) +
-  ylim(hopper_lim) +
-  labs(x = "Temp (ºC)", y = "leafhopper density (insects/leaf)")
-```
-
-## Min Temp
-
-Strongest effect at 1 day lag.  Convex upward relationship also shows benefit of variance around the mean.
-
-```{r}
-htmin_pd %>% 
-  filter(lag == 1) %>% 
-  ggplot(aes(x =x, y = fitted)) +
-  geom_line() +
-  geom_vline(aes(xintercept = mean(hoppers$temp_min)), linetype = 2) +
-  ylim(hopper_lim) +
-  labs(x = "Temp (ºC)", y = "leafhopper density (insects/leaf)")
-  
-```
-
-## Precip
-
-Greatest effect at 12 days lag. Linear response, so not sensitive to increases in variance around mean.
-
-```{r}
-hp_pd %>% 
-  filter(lag == 12) %>% 
-  ggplot(aes(x = x, y = fitted)) +
-  geom_line() +
-  geom_vline(aes(xintercept = 6.9), linetype = 2) +
-  ylim(hopper_lim) +
-  labs(x = "Precip (mm)", y = "leafhopper density (insects/leaf)")
-```
-
