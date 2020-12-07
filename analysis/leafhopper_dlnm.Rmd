@@ -34,7 +34,7 @@ conflict_prefer("here", "here")
 conflict_prefer("lag", "dplyr")
 conflict_prefer("select", "dplyr")
 
-source(here("analysis", "functions.R"))
+source(here("R", "crossbasis.r"))
 ```
 
 
@@ -286,42 +286,42 @@ ggsave(here("figs", "hopper_covariates.png"), dph_plot, width = 165, height = 13
 
 ## Generate plot data
 
-`visibly` pacakge can't handle these cross-basis smooths apparently.
+`visibly` packakge can't handle these cross-basis smooths apparently.
 
 ```{r}
-ht_pd <-
-  pred_hoppers(Q_temp, lag = 15, hoppers, "temp_mean", m_hopper_temp)
-
-htmin_pd <- 
-  pred_hoppers(Q_min_temp, lag = 15, hoppers, "temp_min", m_hopper_min_temp)
-
-htmax_pd <- 
-  pred_hoppers(Q_max_temp, lag = 15, hoppers, "temp_max", m_hopper_max_temp)
-
-hp_pd <-
-  pred_hoppers(Q_precip, lag = 15, hoppers, "precip", m_hopper_precip)
+ht_pd <- cb_margeff(m_hopper_temp, Q_temp, L) 
+htmin_pd <- cb_margeff(m_hopper_min_temp, Q_min_temp, L)
+htmax_pd <- cb_margeff(m_hopper_max_temp, Q_max_temp, L)
+hp_pd <- cb_margeff(m_hopper_precip, Q_precip, L) 
 ```
 
 
 common scale:
 
 ```{r}
-hopper_lim <- c(min(ht_pd$fitted, htmin_pd$fitted, htmax_pd$fitted, hp_pd$fitted),
-                max(ht_pd$fitted, htmin_pd$fitted, htmax_pd$fitted, hp_pd$fitted))
+hopper_lim <- c(min(exp(ht_pd$fitted), 
+                    exp(htmin_pd$fitted),
+                    exp(htmax_pd$fitted), 
+                    exp(hp_pd$fitted)),
+                max(exp(ht_pd$fitted),
+                    exp(htmin_pd$fitted),
+                    exp(htmax_pd$fitted),
+                    exp(hp_pd$fitted)))
 ```
 
 ## Mean Temperature cross-basis
 
 ```{r}
 hopper_temp_raster <-
-  ggplot(ht_pd, aes(x = x, y = lag, z = fitted, fill = fitted)) +
+  ggplot(filter(ht_pd, min_dist < 0.1),
+         aes(x = x, y = lag, z = exp(fitted), fill = exp(fitted))) +
   geom_raster(interpolate = TRUE) +
-  geom_contour(color = "grey50", size = 0.4) +
+  geom_contour(color = "grey50", size = 0.4, binwidth = 0.005) +
   scale_fill_viridis_c("Leafhoppers\nper leaf",
                        option = "A",
                        limits = hopper_lim) + 
   scale_y_continuous("Lag (days)", expand = c(0,0)) + 
-  scale_x_continuous("Temperature (ºC)", expand = c(0,0)) +
+  scale_x_continuous("Daily Mean Temperature (ºC)", expand = c(0,0)) +
   theme(text = element_text(size = 12), aspect.ratio = 1)
 hopper_temp_raster
 # ggsave(here("figs", "hopper_temp_raster.png"))
@@ -332,14 +332,16 @@ hopper_temp_raster
 
 ```{r}
 hopper_min_temp_raster <-
-  ggplot(htmin_pd, aes(x = x, y = lag, z = fitted, fill = fitted)) +
+  ggplot(filter(htmin_pd, min_dist < 0.1),
+         aes(x = x, y = lag, z = exp(fitted), fill = exp(fitted))) +
   geom_raster(interpolate = TRUE) +
-  geom_contour(color = "grey50", size = 0.4) +
+  geom_contour(color = "grey50", size = 0.4, binwidth = 0.005) +
+  # geom_rug(alpha = 0.3) + #if I include this, it should be from the weather data and only on the x-axis I think.
   scale_fill_viridis_c("Leafhoppers\nper leaf",
                        option = "A", 
                        limits = hopper_lim) + 
   scale_y_continuous("Lag (days)", expand = c(0,0)) + 
-  scale_x_continuous("Temperature (ºC)", expand = c(0,0)) +
+  scale_x_continuous("Daily Minimum Temperature (ºC)", expand = c(0,0)) +
   theme(text = element_text(size = 12), aspect.ratio = 1)
 hopper_min_temp_raster
 # ggsave(here("figs", "hopper_min_temp_raster.png"))
@@ -350,14 +352,15 @@ Recent cool temperatures bad for leafhoppers (it's cold out, they're less active
 
 ```{r}
 hopper_max_temp_raster <-
-  ggplot(htmax_pd, aes(x = x, y = lag, z = fitted, fill = fitted)) +
+  ggplot(filter(htmax_pd, min_dist < 0.1),
+         aes(x = x, y = lag, z = exp(fitted), fill = exp(fitted))) +
   geom_raster(interpolate = TRUE) +
-  geom_contour(color = "grey50", size = 0.4) +
+  geom_contour(color = "grey50", size = 0.4, binwidth = 0.005) +
   scale_fill_viridis_c("Leafhoppers\nper leaf",
                        option = "A",
                        limits = hopper_lim) + 
   scale_y_continuous("Lag (days)", expand = c(0,0)) + 
-  scale_x_continuous("Temperature (ºC)", expand = c(0,0)) +
+  scale_x_continuous("Daily Maximum Temperature (ºC)", expand = c(0,0)) +
   theme(text = element_text(size = 12), aspect.ratio = 1)
 hopper_max_temp_raster
 # ggsave(here("figs", "hopper_max_temp_raster.png"))
@@ -368,14 +371,15 @@ Not much of a pattern with max temp.
 
 ```{r}
 hopper_precip_raster <-
-  ggplot(hp_pd, aes(x = x, y = lag, z = fitted, fill = fitted)) +
+  ggplot(filter(hp_pd, min_dist < 0.1),
+         aes(x = x, y = lag, z = exp(fitted), fill = exp(fitted))) +
   geom_raster(interpolate = TRUE) +
-  geom_contour(color = "grey50", size = 0.4) +
+  geom_contour(color = "grey50", size = 0.4, binwidth = 0.005) +
   scale_fill_viridis_c("Leafhoppers\nper leaf",
                        option = "A",
                        limits = hopper_lim) + 
   scale_y_continuous("Lag (days)", expand = c(0,0)) + 
-  scale_x_continuous("Precipitation (mm)", expand = c(0,0)) +
+  scale_x_continuous("Daily Precipitation (mm)", expand = c(0,0)) +
   theme(text = element_text(size = 12), aspect.ratio = 1)
 hopper_precip_raster
 # ggsave(here("figs", "hopper_precip_raster.png"))

@@ -37,7 +37,7 @@ conflict_prefer("here", "here")
 conflict_prefer("lag", "dplyr")
 conflict_prefer("select", "dplyr")
 
-source(here("analysis", "functions.R"))
+source(here("R", "crossbasis.r"))
 ```
 
 # Goal
@@ -304,21 +304,23 @@ ggsave(here("figs", "figure 4.tiff"), covars, width = 165, height = 80, units = 
 ### Generate data
 
 ```{r}
-st_pd <- pred_shoots(Q = Q_temp, lag = 15, df = shootdf, colname = "temp_mean",
-                     model = m_shoot_temp)
-stmin_pd <- pred_shoots(Q = Q_min_temp, lag = 15, df = shootdf, colname = "temp_min",
-                     model = m_shoot_min_temp)
-stmax_pd <- pred_shoots(Q = Q_max_temp, lag = 15, df = shootdf, colname = "temp_max",
-                     model = m_shoot_max_temp)
-sp_pd <- pred_shoots(Q = Q_precip, lag = 15, df = shootdf, colname = "precip",
-                     model = m_shoot_precip)
+st_pd <- cb_margeff(m_shoot_temp, Q_temp, L) 
+stmin_pd <- cb_margeff(m_shoot_min_temp, Q_min_temp, L)
+stmax_pd <- cb_margeff(m_shoot_max_temp, Q_max_temp, L)
+sp_pd <- cb_margeff(m_shoot_precip, Q_precip, L)
 ```
 
 Uniform scale across plots:
 
 ```{r}
-growth_lims <- c(min(st_pd$fitted, sp_pd$fitted, stmin_pd$fitted, stmax_pd$fitted),
-                 max(st_pd$fitted, sp_pd$fitted, stmin_pd$fitted, stmax_pd$fitted))
+growth_lims <- c(min(st_pd$fitted, 
+                     sp_pd$fitted,
+                     stmin_pd$fitted, 
+                     stmax_pd$fitted),
+                 max(st_pd$fitted,
+                     sp_pd$fitted,
+                     stmin_pd$fitted,
+                     stmax_pd$fitted))
 ```
 
 ### Mean Temperature cross-basis
@@ -327,12 +329,12 @@ Raster version:
 
 ```{r}
 shoot_temp_raster <-
-  ggplot(st_pd, aes(x = x, y = lag, z = fitted, fill = fitted)) +
+  ggplot(filter(st_pd, min_dist < 0.1), aes(x = x, y = lag, z = fitted, fill = fitted)) +
   geom_raster(interpolate = TRUE) +
-  geom_contour(color = "grey50", size = 0.4) +
+  geom_contour(color = "grey50", size = 0.4, binwidth = 0.05) +
   scale_fill_viridis_c("Shoot growth\n(cm/day)", option = "A", limits = growth_lims) + 
   scale_y_continuous("Lag (days)", expand = c(0,0)) + 
-  scale_x_continuous("Temperature (ºC)", expand = c(0,0)) +
+  scale_x_continuous("Daily Mean Temperature (ºC)", expand = c(0,0)) +
   theme(text = element_text(size = 12), aspect.ratio = 1)
 shoot_temp_raster
 # ggsave(here("figs", "shoot_temp_raster.png"), shoot_temp_raster)
@@ -342,12 +344,13 @@ shoot_temp_raster
 
 ```{r}
 shoot_min_temp_raster <-
-  ggplot(stmin_pd, aes(x = x, y = lag, z = fitted, fill = fitted)) +
+  ggplot(filter(stmin_pd, min_dist < 0.1), 
+         aes(x = x, y = lag, z = fitted, fill = fitted)) +
   geom_raster(interpolate = TRUE) +
-  geom_contour(color = "grey50", size = 0.4) +
+  geom_contour(color = "grey50", size = 0.4, binwidth = 0.05) +
   scale_fill_viridis_c("Shoot growth\n(cm/day)", option = "A", limits = growth_lims) + 
   scale_y_continuous("Lag (days)", expand = c(0,0)) + 
-  scale_x_continuous("Temperature (ºC)", expand = c(0,0)) +
+  scale_x_continuous("Daily Minimum Temperature (ºC)", expand = c(0,0)) +
   theme(text = element_text(size = 12), aspect.ratio = 1)
 shoot_min_temp_raster
 ```
@@ -356,15 +359,16 @@ shoot_min_temp_raster
 
 ```{r}
 shoot_max_temp_raster <-
-  ggplot(stmax_pd, aes(x = x, y = lag, z = fitted, fill = fitted)) +
+  ggplot(filter(stmax_pd, min_dist < 0.1),
+         aes(x = x, y = lag, z = fitted, fill = fitted)) +
   geom_raster(interpolate = TRUE) +
-  geom_contour(color = "grey50", size = 0.4) +
+  geom_contour(color = "grey50", size = 0.4, binwidth = 0.05) +
   scale_fill_viridis_c("Shoot growth\n(cm/day)", option = "A", limits = growth_lims) + 
   scale_y_continuous("Lag (days)", expand = c(0,0)) + 
-  scale_x_continuous("Temperature (ºC)", expand = c(0,0)) +
+  scale_x_continuous("Daily Maximum Temperature (ºC)", expand = c(0,0)) +
   theme(text = element_text(size = 12), aspect.ratio = 1)
 shoot_max_temp_raster
-ggsave(here("figs", "shoot_max_temp_raster.png"), shoot_max_temp_raster)
+# ggsave(here("figs", "shoot_max_temp_raster.png"), shoot_max_temp_raster)
 ```
 
 ### Precip cross-basis
@@ -391,13 +395,15 @@ Raster version:
 
 ```{r}
 shoot_precip_raster <-
-  ggplot(sp_pd, aes(x = x, y = lag, z = fitted, fill = fitted)) +
+  ggplot(filter(sp_pd, min_dist < 0.1),
+         aes(x = x, y = lag, z = fitted, fill = fitted)) +
   geom_raster(interpolate = TRUE) +
-  geom_contour(color = "grey50", size = 0.4) +
+  geom_contour(color = "grey50", size = 0.4, binwidth = 0.05) +
   scale_fill_viridis_c("Shoot growth\n(cm/day)", option = "A", limits = growth_lims) + 
   scale_y_continuous("Lag (days)", expand = c(0,0)) + 
-  scale_x_continuous("Precipitation (mm)", expand = c(0,0)) +
+  scale_x_continuous("Daily Precipitation (mm)", expand = c(0,0)) +
   theme(text = element_text(size = 12), aspect.ratio = 1)
+shoot_precip_raster
 # ggsave(here("figs", "shoot_precip_raster.png"), shoot_precip_raster)
 ```
 
