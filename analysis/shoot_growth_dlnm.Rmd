@@ -12,7 +12,7 @@ output:
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = TRUE, paged.print=FALSE)
 options(scipen = 4)
 ```
 
@@ -71,45 +71,13 @@ ggplot(shootdf, aes(x=growth)) + geom_histogram(bins = 30)
 
 # Distributed Lag Model: "internal" method
 
-## Setup
-
-Create matrices for temperature, precip, and lag.  Zero days lag doesn't make sense since measurements were taken in the morning.  Remove those by only using variables with "lag" in the name.
-
-```{r}
-Q_temp <-
-  shootdf %>% 
-  select(starts_with("temp_lag")) %>% 
-  as.matrix()
-
-Q_min_temp <-
-  shootdf %>% 
-  select(starts_with("temp_min_lag")) %>% 
-  as.matrix()
-
-Q_max_temp <-
-  shootdf %>% 
-  select(starts_with("temp_max_lag")) %>% 
-  as.matrix()
-
-Q_precip <-
-  shootdf %>%
-  select(starts_with("precip_lag")) %>% 
-  as.matrix()
-
-L <-
-  shootdf %>% 
-  select(starts_with("L")) %>% 
-  as.matrix()
-# head(L)
-```
-
 ## Fit cross-basis GAMs
 
 ```{r}
-m_shoot_temp <- 
+m_shoot_temp_mean <- 
   gam(growth ~ 
         #cross-basis function for temperature
-        s(Q_temp, L,
+        s(Q_temp_mean, L,
           bs = "cb",
           k = c(5, 7),
           xt = list(bs = "cr")
@@ -120,10 +88,10 @@ m_shoot_temp <-
       family = scat, #because residuals are very leptokurtic w/ gaussian
       method = "REML")
 
-m_shoot_min_temp <- 
+m_shoot_temp_min <- 
   gam(growth ~ 
         #cross-basis function for temperature
-        s(Q_min_temp, L,
+        s(Q_temp_min, L,
           bs = "cb",
           k = c(5, 7),
           xt = list(bs = "cr")
@@ -134,10 +102,10 @@ m_shoot_min_temp <-
       family = scat, #because residuals are very leptokurtic w/ gaussian
       method = "REML")
 
-m_shoot_max_temp <- 
+m_shoot_temp_max <- 
   gam(growth ~ 
         #cross-basis function for temperature
-        s(Q_max_temp, L,
+        s(Q_temp_max, L,
           bs = "cb",
           k = c(5, 7),
           xt = list(bs = "cr")
@@ -165,7 +133,7 @@ m_shoot_precip <-
 ```
 
 ```{r}
-ICtab(m_shoot_temp, m_shoot_min_temp, m_shoot_max_temp, m_shoot_precip)
+ICtab(m_shoot_temp_mean, m_shoot_temp_min, m_shoot_temp_max, m_shoot_precip)
 ```
 
 temperature models have the lowest AIC.  Min, max, mean all essentially interchangable.
@@ -175,11 +143,12 @@ temperature models have the lowest AIC.  Min, max, mean all essentially intercha
 Inspect model
 
 ```{r}
-plot_gam_check(m_shoot_temp)
+plot_gam_check(m_shoot_temp_mean)
+gam.check(m_shoot_temp_mean)
 ```
 
 ```{r}
-anova(m_shoot_temp)
+anova(m_shoot_temp_mean)
 ```
 
 Significant effects of lagged temperature, days post harvest, stem diameter, and plant ID.
@@ -189,11 +158,11 @@ Significant effects of lagged temperature, days post harvest, stem diameter, and
 Inspect model
 
 ```{r}
-plot_gam_check(m_shoot_min_temp)
+plot_gam_check(m_shoot_temp_min)
 ```
 
 ```{r}
-anova(m_shoot_min_temp)
+anova(m_shoot_temp_min)
 ```
 
 still significant effect of minimum temperature
@@ -204,12 +173,12 @@ still significant effect of minimum temperature
 Inspect model
 
 ```{r}
-plot_gam_check(m_shoot_max_temp)
+plot_gam_check(m_shoot_temp_max)
 ```
 
 
 ```{r}
-anova(m_shoot_max_temp)
+anova(m_shoot_temp_max)
 ```
 
 Same, still significant.
@@ -235,8 +204,8 @@ In this one, the co-variate `day_post` isn't significant. Odd...
 Extract data from GAMs
 
 ```{r}
-covar_plot_data <- list("Mean Temperature" = m_shoot_temp,
-         "Minimum Temperature" = m_shoot_min_temp,
+covar_plot_data <- list("Mean Temperature" = m_shoot_temp_mean,
+         "Minimum Temperature" = m_shoot_temp_min,
          "Precipitation" = m_shoot_precip) %>%
   map(~plot_gam(.x, main_var = vars(day_post, diameter))) %>% 
   map_df(~pluck(.x,"data"), .id = "model")
@@ -304,9 +273,9 @@ ggsave(here("figs", "figure 4.tiff"), covars, width = 165, height = 80, units = 
 ### Generate data
 
 ```{r}
-st_pd <- cb_margeff(m_shoot_temp, Q_temp, L) 
-stmin_pd <- cb_margeff(m_shoot_min_temp, Q_min_temp, L)
-stmax_pd <- cb_margeff(m_shoot_max_temp, Q_max_temp, L)
+st_pd <- cb_margeff(m_shoot_temp_mean, Q_temp_mean, L) 
+stmin_pd <- cb_margeff(m_shoot_temp_min, Q_temp_min, L)
+stmax_pd <- cb_margeff(m_shoot_temp_max, Q_temp_max, L)
 sp_pd <- cb_margeff(m_shoot_precip, Q_precip, L)
 ```
 
@@ -334,8 +303,7 @@ shoot_temp_raster <-
   geom_contour(color = "grey50", size = 0.4, binwidth = 0.05) +
   scale_fill_viridis_c("Shoot growth\n(cm/day)", option = "A", limits = growth_lims) + 
   scale_y_continuous("Lag (days)", expand = c(0,0)) + 
-  scale_x_continuous("Daily Mean Temperature (ºC)", expand = c(0,0)) +
-  theme(text = element_text(size = 12), aspect.ratio = 1)
+  scale_x_continuous("Daily Mean Temperature (ºC)", expand = c(0,0)) 
 shoot_temp_raster
 # ggsave(here("figs", "shoot_temp_raster.png"), shoot_temp_raster)
 ```
@@ -350,8 +318,7 @@ shoot_min_temp_raster <-
   geom_contour(color = "grey50", size = 0.4, binwidth = 0.05) +
   scale_fill_viridis_c("Shoot growth\n(cm/day)", option = "A", limits = growth_lims) + 
   scale_y_continuous("Lag (days)", expand = c(0,0)) + 
-  scale_x_continuous("Daily Minimum Temperature (ºC)", expand = c(0,0)) +
-  theme(text = element_text(size = 12), aspect.ratio = 1)
+  scale_x_continuous("Daily Minimum Temperature (ºC)", expand = c(0,0)) 
 shoot_min_temp_raster
 ```
 
@@ -365,31 +332,12 @@ shoot_max_temp_raster <-
   geom_contour(color = "grey50", size = 0.4, binwidth = 0.05) +
   scale_fill_viridis_c("Shoot growth\n(cm/day)", option = "A", limits = growth_lims) + 
   scale_y_continuous("Lag (days)", expand = c(0,0)) + 
-  scale_x_continuous("Daily Maximum Temperature (ºC)", expand = c(0,0)) +
-  theme(text = element_text(size = 12), aspect.ratio = 1)
+  scale_x_continuous("Daily Maximum Temperature (ºC)", expand = c(0,0))
 shoot_max_temp_raster
 # ggsave(here("figs", "shoot_max_temp_raster.png"), shoot_max_temp_raster)
 ```
 
 ### Precip cross-basis
-
-```{r}
-sp_pd %>% 
-  filter(lag == 1) %>% 
-  filter(fitted == max(fitted))
-
-sp_pd %>% 
-  filter(lag == 1) %>% 
-  filter(x == min(x))
-
-sp_pd %>% 
-  filter(lag == 1) %>% 
-  filter(fitted == min(fitted))
-
-sp_pd %>% 
-  # filter(lag == 1) %>% 
-  filter(fitted == max(fitted))
-```
 
 Raster version:
 
@@ -401,8 +349,7 @@ shoot_precip_raster <-
   geom_contour(color = "grey50", size = 0.4, binwidth = 0.05) +
   scale_fill_viridis_c("Shoot growth\n(cm/day)", option = "A", limits = growth_lims) + 
   scale_y_continuous("Lag (days)", expand = c(0,0)) + 
-  scale_x_continuous("Daily Precipitation (mm)", expand = c(0,0)) +
-  theme(text = element_text(size = 12), aspect.ratio = 1)
+  scale_x_continuous("Daily Precipitation (mm)", expand = c(0,0))
 shoot_precip_raster
 # ggsave(here("figs", "shoot_precip_raster.png"), shoot_precip_raster)
 ```
@@ -410,10 +357,11 @@ shoot_precip_raster
 Combine raster plots
 ```{r}
 shoot_cb <-
-  shoot_min_temp_raster + shoot_temp_raster + shoot_precip_raster + guide_area() +
+  shoot_min_temp_raster + shoot_temp_raster + shoot_max_temp_raster + shoot_precip_raster +
   plot_layout(guides = "collect") + 
   plot_annotation(tag_levels = "A") &
-  guides(fill = guide_colorbar(title.position = "left"))
+  theme_classic()
+shoot_cb
 ggsave(here("figs", "shoot_crossbasis.png"), shoot_cb, width = 165, units = "mm")
 ggsave(here("figs", "figure 3.eps"), shoot_cb, width = 165, units = "mm")
 ```

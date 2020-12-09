@@ -12,7 +12,7 @@ output:
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = TRUE, paged.print = FALSE)
 options(scipen = 4)
 ```
 
@@ -56,46 +56,16 @@ head(hoppers)
 
 # Distributed Lag Model: "internal" method
 
-## Setup
-
-Create matrices for temperature, precip, and lag.
-
-```{r}
-Q_temp <-
-  hoppers %>% 
-  select(starts_with("temp_lag"), -temp_at_count, -temp_max, -temp_min) %>% 
-  as.matrix()
-
-Q_min_temp <-
-  hoppers %>% 
-  select(starts_with("temp_min_lag")) %>% 
-  as.matrix()
-
-Q_max_temp <-
-  hoppers %>% 
-  select(starts_with("temp_max_lag")) %>% 
-  as.matrix()
-
-Q_precip <-
-  hoppers %>%
-  select(starts_with("precip_lag")) %>% 
-  as.matrix()
-
-L <- 
-  hoppers %>%
-  select(starts_with("L")) %>%
-  as.matrix()
-```
-
-# Build the GAMs
+## Build the GAMs
 
 Temp and precip are highly concurve, so can't trust p-values. I'll do the models separately.
 
 ```{r}
 #mean daily temp
-m_hopper_temp <- 
+
+m_hopper_temp_mean <- 
   gam(hoppers ~
-        s(Q_temp, L,
+        s(Q_temp_mean, L,
           bs = "cb",
           k = c(5, 7),
           xt = list(bs = "cr")
@@ -110,9 +80,9 @@ m_hopper_temp <-
       data = hoppers,
       method = "REML")
 
-m_hopper_min_temp <- 
+m_hopper_temp_min <- 
   gam(hoppers ~
-        s(Q_min_temp, L,
+        s(Q_temp_min, L,
           bs = "cb",
           k = c(5, 7),
           xt = list(bs = "cr")
@@ -127,9 +97,9 @@ m_hopper_min_temp <-
       data = hoppers,
       method = "REML")
 
-m_hopper_max_temp <- 
+m_hopper_temp_max <- 
   gam(hoppers ~
-        s(Q_max_temp, L,
+        s(Q_temp_max, L,
           bs = "cb",
           k = c(5, 7),
           xt = list(bs = "cr")
@@ -163,7 +133,7 @@ m_hopper_precip <-
 ```
 
 ```{r}
-ICtab(m_hopper_temp, m_hopper_min_temp, m_hopper_max_temp, m_hopper_precip)
+ICtab(m_hopper_temp_mean, m_hopper_temp_min, m_hopper_temp_max, m_hopper_precip)
 ```
 
 Minimum temperature model "wins"
@@ -174,8 +144,8 @@ Minimum temperature model "wins"
 
 ```{r}
 #check for overdispersion
-sum(residuals(m_hopper_temp, type = "pearson")^2) / df.residual(m_hopper_temp)
-plot_gam_check(m_hopper_temp)
+sum(residuals(m_hopper_temp_mean, type = "pearson")^2) / df.residual(m_hopper_temp_mean)
+plot_gam_check(m_hopper_temp_mean)
 ```
 
 not overdispersed
@@ -183,7 +153,7 @@ not overdispersed
 ## Significance test
 
 ```{r}
-anova.gam(m_hopper_temp)
+anova.gam(m_hopper_temp_mean)
 ```
 
 Significant effect of plant (parametric factor), temperature, precip, days post harvest, and diameter on growth.
@@ -191,9 +161,9 @@ Significant effect of plant (parametric factor), temperature, precip, days post 
 ## Plot regular smooths of covariates
 
 ```{r}
-plot.gam(m_hopper_temp, pages = 1, residuals = FALSE, all.terms = TRUE)
-plot.gam(m_hopper_min_temp, pages = 1, residuals = FALSE, all.terms = TRUE)
-plot.gam(m_hopper_max_temp, pages = 1, residuals = FALSE, all.terms = TRUE)
+plot.gam(m_hopper_temp_mean, pages = 1, residuals = FALSE, all.terms = TRUE)
+plot.gam(m_hopper_temp_min, pages = 1, residuals = FALSE, all.terms = TRUE)
+plot.gam(m_hopper_temp_max, pages = 1, residuals = FALSE, all.terms = TRUE)
 plot.gam(m_hopper_precip, pages = 1, residuals = FALSE, all.terms = TRUE)
 ```
 
@@ -202,28 +172,29 @@ plot.gam(m_hopper_precip, pages = 1, residuals = FALSE, all.terms = TRUE)
 ## Inspect the GAM
 
 ```{r}
-plot_gam_check(m_hopper_min_temp)
+plot_gam_check(m_hopper_temp_min)
 #check for overdispersion
-sum(residuals(m_hopper_min_temp, type = "pearson")^2) / df.residual(m_hopper_min_temp)
+sum(residuals(m_hopper_temp_min, type = "pearson")^2) / df.residual(m_hopper_temp_min)
 ```
 
 ## Significance test
 
 ```{r}
-anova.gam(m_hopper_min_temp)
+anova.gam(m_hopper_temp_min)
 ```
 
 Min temp is significant
 
 # Maximum temperature
+
 ```{r}
-plot_gam_check(m_hopper_max_temp)
+plot_gam_check(m_hopper_temp_max)
 #check for overdispersion
-sum(residuals(m_hopper_max_temp, type = "pearson")^2) / df.residual(m_hopper_max_temp)
+sum(residuals(m_hopper_temp_max, type = "pearson")^2) / df.residual(m_hopper_temp_max)
 ```
 
 ```{r}
-anova.gam(m_hopper_max_temp)
+anova.gam(m_hopper_temp_max)
 ```
 
 max temp also highly significant.
@@ -264,8 +235,8 @@ plot.gam(m_hopper_precip,
 Days post-harvest
 
 ```{r}
-d <- list("Mean Temperature" = m_hopper_temp,
-         "Minimum Temperature" = m_hopper_min_temp,
+d <- list("Mean Temperature" = m_hopper_temp_mean,
+         "Minimum Temperature" = m_hopper_temp_min,
          "Precipitation" = m_hopper_precip) %>%
   map(~plot_gam(.x, main_var = day_post))
 
@@ -289,9 +260,9 @@ ggsave(here("figs", "hopper_covariates.png"), dph_plot, width = 165, height = 13
 `visibly` packakge can't handle these cross-basis smooths apparently.
 
 ```{r}
-ht_pd <- cb_margeff(m_hopper_temp, Q_temp, L) 
-htmin_pd <- cb_margeff(m_hopper_min_temp, Q_min_temp, L)
-htmax_pd <- cb_margeff(m_hopper_max_temp, Q_max_temp, L)
+ht_pd <- cb_margeff(m_hopper_temp_mean, Q_temp_mean, L) 
+htmin_pd <- cb_margeff(m_hopper_temp_min, Q_temp_min, L)
+htmax_pd <- cb_margeff(m_hopper_temp_max, Q_temp_max, L)
 hp_pd <- cb_margeff(m_hopper_precip, Q_precip, L) 
 ```
 
@@ -321,8 +292,7 @@ hopper_temp_raster <-
                        option = "A",
                        limits = hopper_lim) + 
   scale_y_continuous("Lag (days)", expand = c(0,0)) + 
-  scale_x_continuous("Daily Mean Temperature (ºC)", expand = c(0,0)) +
-  theme(text = element_text(size = 12), aspect.ratio = 1)
+  scale_x_continuous("Daily Mean Temperature (ºC)", expand = c(0,0))
 hopper_temp_raster
 # ggsave(here("figs", "hopper_temp_raster.png"))
 ```
@@ -341,8 +311,7 @@ hopper_min_temp_raster <-
                        option = "A", 
                        limits = hopper_lim) + 
   scale_y_continuous("Lag (days)", expand = c(0,0)) + 
-  scale_x_continuous("Daily Minimum Temperature (ºC)", expand = c(0,0)) +
-  theme(text = element_text(size = 12), aspect.ratio = 1)
+  scale_x_continuous("Daily Minimum Temperature (ºC)", expand = c(0,0))
 hopper_min_temp_raster
 # ggsave(here("figs", "hopper_min_temp_raster.png"))
 ```
@@ -360,8 +329,7 @@ hopper_max_temp_raster <-
                        option = "A",
                        limits = hopper_lim) + 
   scale_y_continuous("Lag (days)", expand = c(0,0)) + 
-  scale_x_continuous("Daily Maximum Temperature (ºC)", expand = c(0,0)) +
-  theme(text = element_text(size = 12), aspect.ratio = 1)
+  scale_x_continuous("Daily Maximum Temperature (ºC)", expand = c(0,0))
 hopper_max_temp_raster
 # ggsave(here("figs", "hopper_max_temp_raster.png"))
 ```
@@ -379,8 +347,7 @@ hopper_precip_raster <-
                        option = "A",
                        limits = hopper_lim) + 
   scale_y_continuous("Lag (days)", expand = c(0,0)) + 
-  scale_x_continuous("Daily Precipitation (mm)", expand = c(0,0)) +
-  theme(text = element_text(size = 12), aspect.ratio = 1)
+  scale_x_continuous("Daily Precipitation (mm)", expand = c(0,0))
 hopper_precip_raster
 # ggsave(here("figs", "hopper_precip_raster.png"))
 ```
@@ -392,10 +359,14 @@ High precip 10-12 days ago has positive effect on leafhoppers
 
 ```{r}
 hopper_cb <-
-  hopper_min_temp_raster +  hopper_temp_raster + hopper_precip_raster + guide_area() +
+  hopper_min_temp_raster +
+  hopper_temp_raster +
+  hopper_max_temp_raster +
+  hopper_precip_raster +
   plot_layout(guides = "collect") +
   plot_annotation(tag_levels = "A") &
-  guides(fill = guide_colorbar(title.position = "left"))
+  theme_classic()
+hopper_cb
 ggsave(here("figs", "hopper_crossbasis.png"), hopper_cb, width = 165, units = "mm")
 ggsave(here("figs", "figure 2.eps"), hopper_cb, width = 165, units = "mm")
 ```
