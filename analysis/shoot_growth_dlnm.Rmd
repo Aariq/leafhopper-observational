@@ -83,7 +83,7 @@ m_shoot_temp_mean <-
           k = c(5, 7),
           xt = list(bs = "cr")
           ) +
-        s(day_post, bs = "cs") + s(diameter, bs = "cs") + #co-variates
+        s(day_post, bs = "cr") + s(diameter, bs = "cr") + #co-variates
         s(interharvest_id, bs = "re") + s(plant, bs = "re"), #random effects
       data = shootdf,
       family = scat, #because residuals are very leptokurtic w/ gaussian
@@ -97,7 +97,7 @@ m_shoot_temp_min <-
           k = c(5, 7),
           xt = list(bs = "cr")
           ) +
-        s(day_post, bs = "cs") + s(diameter, bs = "cs") + #co-variates
+        s(day_post, bs = "cr") + s(diameter, bs = "cr") + #co-variates
         s(interharvest_id, bs = "re") + s(plant, bs = "re"), #random effects
       data = shootdf,
       family = scat, #because residuals are very leptokurtic w/ gaussian
@@ -111,7 +111,7 @@ m_shoot_temp_max <-
           k = c(5, 7),
           xt = list(bs = "cr")
           ) +
-        s(day_post, bs = "cs") + s(diameter, bs = "cs") + #co-variates
+        s(day_post, bs = "cr") + s(diameter, bs = "cr") + #co-variates
         s(interharvest_id, bs = "re") + s(plant, bs = "re"), #random effects
       data = shootdf,
       family = scat, #because residuals are very leptokurtic w/ gaussian
@@ -126,7 +126,7 @@ m_shoot_precip <-
           k = c(5, 7),
           xt = list(bs = "cr")
           ) +
-        s(day_post, bs = "cs") + s(diameter, bs = "cs") + #co-variates
+        s(day_post, bs = "cr") + s(diameter, bs = "cr") + #co-variates
         s(interharvest_id, bs = "re") + s(plant, bs = "re"), #random effects
       data = shootdf,
       family = scat, #because residuals are very leptokurtic w/ gaussian

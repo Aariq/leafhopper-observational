@@ -70,7 +70,7 @@ m_hopper_temp_mean <-
           k = c(5, 7),
           xt = list(bs = "cr")
         ) +
-        s(day_post, bs = "cs") +
+        s(day_post, bs = "cr") +
         s(counter, bs = "re") + #no difference with random vs. fixed
         # counter +
         s(interharvest_id, bs = "re") +
@@ -87,7 +87,7 @@ m_hopper_temp_min <-
           k = c(5, 7),
           xt = list(bs = "cr")
         ) +
-        s(day_post, bs = "cs") +
+        s(day_post, bs = "cr") +
         s(counter, bs = "re") + #no difference with random vs. fixed
         # counter +
         s(interharvest_id, bs = "re") +
@@ -104,7 +104,7 @@ m_hopper_temp_max <-
           k = c(5, 7),
           xt = list(bs = "cr")
         ) +
-        s(day_post, bs = "cs") +
+        s(day_post, bs = "cr") +
         s(counter, bs = "re") + #no difference with random vs. fixed
         # counter +
         s(interharvest_id, bs = "re") +
@@ -121,7 +121,7 @@ m_hopper_precip <-
           k = c(5, 7),
           xt = list(bs = "cr")
         ) +
-        s(day_post, bs = "cs") +
+        s(day_post, bs = "cr") +
         s(counter, bs = "re") + #no difference with random vs. fixed
         # counter +
         s(interharvest_id, bs = "re") +
@@ -145,7 +145,7 @@ Minimum temperature model "wins"
 ```{r}
 #check for overdispersion
 sum(residuals(m_hopper_temp_mean, type = "pearson")^2) / df.residual(m_hopper_temp_mean)
-plot_gam_check(m_hopper_temp_mean)
+gam.check(m_hopper_temp_mean)
 ```
 
 not overdispersed
@@ -172,7 +172,7 @@ plot.gam(m_hopper_precip, pages = 1, residuals = FALSE, all.terms = TRUE)
 ## Inspect the GAM
 
 ```{r}
-plot_gam_check(m_hopper_temp_min)
+gam.check(m_hopper_temp_min)
 #check for overdispersion
 sum(residuals(m_hopper_temp_min, type = "pearson")^2) / df.residual(m_hopper_temp_min)
 ```
@@ -188,7 +188,7 @@ Min temp is significant
 # Maximum temperature
 
 ```{r}
-plot_gam_check(m_hopper_temp_max)
+gam.check(m_hopper_temp_max)
 #check for overdispersion
 sum(residuals(m_hopper_temp_max, type = "pearson")^2) / df.residual(m_hopper_temp_max)
 ```
@@ -204,7 +204,7 @@ max temp also highly significant.
 Inspect gam:
 
 ```{r}
-plot_gam_check(m_hopper_precip)
+gam.check(m_hopper_precip)
 ```
 
 
@@ -287,7 +287,7 @@ hopper_temp_raster <-
   ggplot(filter(ht_pd, min_dist < 0.1),
          aes(x = x, y = lag, z = exp(fitted), fill = exp(fitted))) +
   geom_raster(interpolate = TRUE) +
-  geom_contour(color = "grey50", size = 0.4, binwidth = 0.005) +
+  geom_contour(color = "grey50", size = 0.4, binwidth = 0.001) +
   scale_fill_viridis_c("Leafhoppers\nper leaf",
                        option = "A",
                        limits = hopper_lim) + 
@@ -305,7 +305,7 @@ hopper_min_temp_raster <-
   ggplot(filter(htmin_pd, min_dist < 0.1),
          aes(x = x, y = lag, z = exp(fitted), fill = exp(fitted))) +
   geom_raster(interpolate = TRUE) +
-  geom_contour(color = "grey50", size = 0.4, binwidth = 0.005) +
+  geom_contour(color = "grey50", size = 0.4, binwidth = 0.001) +
   # geom_rug(alpha = 0.3) + #if I include this, it should be from the weather data and only on the x-axis I think.
   scale_fill_viridis_c("Leafhoppers\nper leaf",
                        option = "A", 
@@ -324,7 +324,7 @@ hopper_max_temp_raster <-
   ggplot(filter(htmax_pd, min_dist < 0.1),
          aes(x = x, y = lag, z = exp(fitted), fill = exp(fitted))) +
   geom_raster(interpolate = TRUE) +
-  geom_contour(color = "grey50", size = 0.4, binwidth = 0.005) +
+  geom_contour(color = "grey50", size = 0.4, binwidth = 0.001) +
   scale_fill_viridis_c("Leafhoppers\nper leaf",
                        option = "A",
                        limits = hopper_lim) + 
@@ -342,7 +342,7 @@ hopper_precip_raster <-
   ggplot(filter(hp_pd, min_dist < 0.1),
          aes(x = x, y = lag, z = exp(fitted), fill = exp(fitted))) +
   geom_raster(interpolate = TRUE) +
-  geom_contour(color = "grey50", size = 0.4, binwidth = 0.005) +
+  geom_contour(color = "grey50", size = 0.4, binwidth = 0.001) +
   scale_fill_viridis_c("Leafhoppers\nper leaf",
                        option = "A",
                        limits = hopper_lim) + 
