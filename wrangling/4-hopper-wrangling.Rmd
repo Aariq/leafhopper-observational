@@ -12,7 +12,7 @@ output:
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = TRUE, paged.print = FALSE)
 ```
 
 *Last compiled: `r Sys.Date()`*
@@ -149,7 +149,7 @@ hoppers7 <-
   mutate(interharvest_id = as.factor(paste0(field, interharvest.no)),
          counter = as.factor(counter),
          plant = as.factor(plant)) %>% 
-  select(date_time, date, day, day_post, field, interharvest_id, plant, counter, hoppers, n_leaves, temp_at_count, starts_with("temp_"), starts_with("precip"), starts_with("L"))
+  select(date_time, date, day, day_post, field, interharvest_id, plant, counter, hoppers, n_leaves, temp_at_count, starts_with("temp_"), starts_with("precip"), starts_with("Q"), starts_with("L"))
 ```
 
 
