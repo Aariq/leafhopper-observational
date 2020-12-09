@@ -27,7 +27,6 @@ library(dlnm)
 library(colorspace)
 library(bbmle)
 library(patchwork)
-library(visibly) #for ggplot figures from GAMs
 
 conflict_prefer("filter", "dplyr")
 conflict_prefer("here", "here")
@@ -61,13 +60,11 @@ head(hoppers)
 Temp and precip are highly concurve, so can't trust p-values. I'll do the models separately.
 
 ```{r}
-#mean daily temp
-
 m_hopper_temp_mean <- 
   gam(hoppers ~
         s(Q_temp_mean, L,
           bs = "cb",
-          k = c(5, 7),
+          k = c(10, 14),
           xt = list(bs = "cr")
         ) +
         s(day_post, bs = "cr") +
@@ -78,13 +75,14 @@ m_hopper_temp_mean <-
       family = poisson(),
       offset = log(n_leaves),
       data = hoppers,
+      gamma = 1.2,
       method = "REML")
 
 m_hopper_temp_min <- 
   gam(hoppers ~
         s(Q_temp_min, L,
           bs = "cb",
-          k = c(5, 7),
+          k = c(10, 14),
           xt = list(bs = "cr")
         ) +
         s(day_post, bs = "cr") +
@@ -95,13 +93,14 @@ m_hopper_temp_min <-
       family = poisson(),
       offset = log(n_leaves),
       data = hoppers,
+      gamma = 1.2,
       method = "REML")
 
 m_hopper_temp_max <- 
   gam(hoppers ~
         s(Q_temp_max, L,
           bs = "cb",
-          k = c(5, 7),
+          k = c(10, 14),
           xt = list(bs = "cr")
         ) +
         s(day_post, bs = "cr") +
@@ -112,13 +111,14 @@ m_hopper_temp_max <-
       family = poisson(),
       offset = log(n_leaves),
       data = hoppers,
+      gamma = 1.2,
       method = "REML")
 
 m_hopper_precip <- 
   gam(hoppers ~
         s(Q_precip, L,
           bs = "cb",
-          k = c(5, 7),
+          k = c(10, 14),
           xt = list(bs = "cr")
         ) +
         s(day_post, bs = "cr") +
@@ -129,6 +129,7 @@ m_hopper_precip <-
       family = poisson(),
       offset = log(n_leaves),
       data = hoppers,
+      gamma = 1.2,
       method = "REML")
 ```
 
@@ -376,21 +377,21 @@ Try adding a rug for weather data
 ```{r}
 weather <- read_rds(here("data", "cleaned", "weather_lags.rds"))
 weather <- weather %>% 
-  filter(date > min(hoppers$date) - days(15),
+  filter(date > min(hoppers$date) - lubridate::days(15),
          date != max(hoppers$date)) #last day wouldn't show up in lags for any observations
 range(weather$date)
 range(hoppers$date)
 
 hopper_min_temp_raster +
-  geom_rug(data = weather, inherit.aes = FALSE, aes(x = temp_min), alpha = 0.5) +
+  geom_rug(data = weather, inherit.aes = FALSE, aes(x = temp_min), color = "grey50") +
 hopper_temp_raster +
-  geom_rug(data = weather, inherit.aes = FALSE, aes(x = temp_mean), alpha = 0.5) +
+  geom_rug(data = weather, inherit.aes = FALSE, aes(x = temp_mean), color = "grey50") +
 hopper_max_temp_raster +
-  geom_rug(data = weather, inherit.aes = FALSE, aes(x = temp_max), alpha = 0.5) +
+  geom_rug(data = weather, inherit.aes = FALSE, aes(x = temp_max), color = "grey50") +
 hopper_precip_raster +
-  geom_rug(data = weather, inherit.aes = FALSE, aes(x = precip), alpha = 0.5) +
+  geom_rug(data = weather, inherit.aes = FALSE, aes(x = precip), color = "grey50") +
   plot_layout(guides = "collect") +
   plot_annotation(tag_levels = "A") &
   theme_classic()
-ggsave(here("figs", "hopper_crossbasis_rug.png"), shoot_cb, width = 165, units = "mm")
+ggsave(here("figs", "hopper_crossbasis_rug.png"), width = 165, units = "mm")
 ```
