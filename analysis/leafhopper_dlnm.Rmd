@@ -26,14 +26,11 @@ library(mgcv)
 library(dlnm)
 library(colorspace)
 library(bbmle)
-library(patchwork)
 
 conflict_prefer("filter", "dplyr")
 conflict_prefer("here", "here")
 conflict_prefer("lag", "dplyr")
 conflict_prefer("select", "dplyr")
-
-source(here("R", "crossbasis.r"))
 ```
 
 
@@ -228,172 +225,12 @@ plot.gam(m_hopper_precip,
          )
 ```
 
-
-# Plots
-
-## Covaraiate
-
-Days post-harvest
+# Save models
 
 ```{r}
-d <- list("Mean Temperature" = m_hopper_temp_mean,
-         "Minimum Temperature" = m_hopper_temp_min,
-         "Precipitation" = m_hopper_precip) %>%
-  map(~plot_gam(.x, main_var = day_post))
-
-dph_plot <-
-  d %>%
-  map_df(~pluck(.x,"data"), .id = "model") %>% 
-  ggplot(aes(x = value, y = fit, color = model)) +
-  geom_ribbon(aes(ymin = ll, ymax = ul), 
-              fill = "grey", linetype = 0, alpha = 0.5) +
-  geom_line(size = 1) +
-  geom_rug(data = hoppers, aes(day_post), inherit.aes = FALSE, alpha = 0.03) +
-  labs(x = "Days post harvest", y = "Leafhoppers / leaf", color = "Model") +
-  theme_bw() +
-  theme(aspect.ratio = 1)
-dph_plot
-ggsave(here("figs", "hopper_covariates.png"), dph_plot, width = 165, height = 130, units = "mm")
+write_rds(m_hopper_precip, here("analysis", "models", "m_hopper_precip.rds"))
+write_rds(m_hopper_temp_max, here("analysis", "models", "m_hopper_temp_max.rds"))
+write_rds(m_hopper_temp_mean, here("analysis", "models", "m_hopper_temp_mean.rds"))
+write_rds(m_hopper_temp_min, here("analysis", "models", "m_hopper_temp_min.rds"))
 ```
 
-## Generate plot data
-
-`visibly` packakge can't handle these cross-basis smooths apparently.
-
-```{r}
-ht_pd <- cb_margeff(m_hopper_temp_mean, Q_temp_mean, L) 
-htmin_pd <- cb_margeff(m_hopper_temp_min, Q_temp_min, L)
-htmax_pd <- cb_margeff(m_hopper_temp_max, Q_temp_max, L)
-hp_pd <- cb_margeff(m_hopper_precip, Q_precip, L) 
-```
-
-
-common scale:
-
-```{r}
-hopper_lim <- c(min(exp(ht_pd$fitted), 
-                    exp(htmin_pd$fitted),
-                    exp(htmax_pd$fitted), 
-                    exp(hp_pd$fitted)),
-                max(exp(ht_pd$fitted),
-                    exp(htmin_pd$fitted),
-                    exp(htmax_pd$fitted),
-                    exp(hp_pd$fitted)))
-```
-
-## Mean Temperature cross-basis
-
-```{r}
-hopper_temp_raster <-
-  ggplot(filter(ht_pd, min_dist < 0.1),
-         aes(x = x, y = lag, z = exp(fitted), fill = exp(fitted))) +
-  geom_raster(interpolate = TRUE) +
-  geom_contour(color = "grey50", size = 0.4, binwidth = 0.001) +
-  scale_fill_viridis_c("Leafhoppers\nper leaf",
-                       option = "A",
-                       limits = hopper_lim) + 
-  scale_y_continuous("Lag (days)", expand = c(0,0)) + 
-  scale_x_continuous("Daily Mean Temperature (ºC)", expand = c(0,0))
-hopper_temp_raster
-# ggsave(here("figs", "hopper_temp_raster.png"))
-```
-
-
-## Minimum Temperature cross-basis
-
-```{r}
-hopper_min_temp_raster <-
-  ggplot(filter(htmin_pd, min_dist < 0.1),
-         aes(x = x, y = lag, z = exp(fitted), fill = exp(fitted))) +
-  geom_raster(interpolate = TRUE) +
-  geom_contour(color = "grey50", size = 0.4, binwidth = 0.001) +
-  # geom_rug(alpha = 0.3) + #if I include this, it should be from the weather data and only on the x-axis I think.
-  scale_fill_viridis_c("Leafhoppers\nper leaf",
-                       option = "A", 
-                       limits = hopper_lim) + 
-  scale_y_continuous("Lag (days)", expand = c(0,0)) + 
-  scale_x_continuous("Daily Minimum Temperature (ºC)", expand = c(0,0))
-hopper_min_temp_raster
-# ggsave(here("figs", "hopper_min_temp_raster.png"))
-```
-Recent cool temperatures bad for leafhoppers (it's cold out, they're less active)
-
-## Maximum temperature cross-basis
-
-```{r}
-hopper_max_temp_raster <-
-  ggplot(filter(htmax_pd, min_dist < 0.1),
-         aes(x = x, y = lag, z = exp(fitted), fill = exp(fitted))) +
-  geom_raster(interpolate = TRUE) +
-  geom_contour(color = "grey50", size = 0.4, binwidth = 0.001) +
-  scale_fill_viridis_c("Leafhoppers\nper leaf",
-                       option = "A",
-                       limits = hopper_lim) + 
-  scale_y_continuous("Lag (days)", expand = c(0,0)) + 
-  scale_x_continuous("Daily Maximum Temperature (ºC)", expand = c(0,0))
-hopper_max_temp_raster
-# ggsave(here("figs", "hopper_max_temp_raster.png"))
-```
-Not much of a pattern with max temp.
-
-## Precipitation cross-basis
-
-```{r}
-hopper_precip_raster <-
-  ggplot(filter(hp_pd, min_dist < 0.1),
-         aes(x = x, y = lag, z = exp(fitted), fill = exp(fitted))) +
-  geom_raster(interpolate = TRUE) +
-  geom_contour(color = "grey50", size = 0.4, binwidth = 0.001) +
-  scale_fill_viridis_c("Leafhoppers\nper leaf",
-                       option = "A",
-                       limits = hopper_lim) + 
-  scale_y_continuous("Lag (days)", expand = c(0,0)) + 
-  scale_x_continuous("Daily Precipitation (mm)", expand = c(0,0))
-hopper_precip_raster
-# ggsave(here("figs", "hopper_precip_raster.png"))
-```
-
-High precip 10-12 days ago has positive effect on leafhoppers
-
-
-## Combine raster plots
-
-```{r}
-hopper_cb <-
-  hopper_min_temp_raster +
-  hopper_temp_raster +
-  hopper_max_temp_raster +
-  hopper_precip_raster +
-  plot_layout(guides = "collect") +
-  plot_annotation(tag_levels = "A") &
-  theme_classic() +
-  theme(text = element_text(size = 10))
-hopper_cb
-ggsave(here("figs", "hopper_crossbasis.png"), hopper_cb, width = 165, units = "mm")
-ggsave(here("figs", "figure 2.eps"), hopper_cb, width = 165, units = "mm")
-```
-
-Try adding a rug for weather data
-
-```{r}
-weather <- read_rds(here("data", "cleaned", "weather_lags.rds"))
-weather <- weather %>% 
-  filter(date > min(hoppers$date) - lubridate::days(15),
-         date != max(hoppers$date)) #last day wouldn't show up in lags for any observations
-range(weather$date)
-range(hoppers$date)
-
-hopper_min_temp_raster +
-  geom_rug(data = weather, inherit.aes = FALSE, aes(x = temp_min), color = "grey50") +
-hopper_temp_raster +
-  geom_rug(data = weather, inherit.aes = FALSE, aes(x = temp_mean), color = "grey50") +
-hopper_max_temp_raster +
-  geom_rug(data = weather, inherit.aes = FALSE, aes(x = temp_max), color = "grey50") +
-hopper_precip_raster +
-  geom_rug(data = weather, inherit.aes = FALSE, aes(x = precip), color = "grey50") +
-  plot_layout(guides = "collect") +
-  plot_annotation(tag_levels = "A") &
-  theme_classic() +
-  theme(text = element_text(size = 10))
-ggsave(here("figs", "hopper_crossbasis_rug.png"), width = 165, units = "mm")
-```

@@ -1,0 +1,433 @@
+---
+title: "DLNM plots"
+author: "Eric R. Scott"
+date: "2020-12-14"
+output: 
+  html_notebook: 
+    highlight: kate
+    theme: yeti
+    toc: yes
+    toc_float: yes
+    number_sections: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(here)
+library(conflicted)
+library(mgcv)
+library(dlnm)
+library(patchwork)
+library(visibly)
+
+source(here("R", "crossbasis.r"))
+
+conflict_prefer("lag", "dplyr")
+conflict_prefer("filter", "dplyr")
+```
+
+*Last compiled: `r Sys.Date()`*
+
+# Purpose
+
+What is the goal of this notebook?
+
+# Load Data
+
+```{r data, echo=TRUE}
+hoppers <- read_rds(here("data", "cleaned", "hopper-weather.rds"))
+shootdf <- read_rds(here("data", "cleaned", "shoots.rds"))
+
+m_hopper_precip <- read_rds(here("analysis", "models", "m_hopper_precip.rds"))
+m_hopper_temp_max  <- read_rds(here("analysis", "models", "m_hopper_temp_max.rds"))
+m_hopper_temp_mean <- read_rds(here("analysis", "models", "m_hopper_temp_mean.rds"))
+m_hopper_temp_min  <- read_rds(here("analysis", "models", "m_hopper_temp_min.rds"))
+```
+
+# Leafhopper Plots
+
+## Covaraiate
+
+Days post-harvest
+
+```{r}
+d <- list("Mean Temperature" = m_hopper_temp_mean,
+         "Minimum Temperature" = m_hopper_temp_min,
+         "Maximum Temperature" = m_hopper_temp_max,
+         "Precipitation" = m_hopper_precip) %>%
+  map(~plot_gam(.x, main_var = day_post))
+
+dph_plot <-
+  d %>%
+  map_df(~pluck(.x,"data"), .id = "model") %>% 
+  ggplot(aes(x = value, y = fit, color = model)) +
+  geom_ribbon(aes(ymin = ll, ymax = ul), 
+              fill = "grey", linetype = 0, alpha = 0.5) +
+  geom_line(size = 1) +
+  geom_rug(data = hoppers, aes(day_post), inherit.aes = FALSE, alpha = 0.03) +
+  labs(x = "Days post harvest", y = "Leafhoppers / leaf", color = "Model") +
+  theme_bw() +
+  theme(aspect.ratio = 1)
+dph_plot
+ggsave(here("figs", "hopper_covariates.png"), dph_plot, width = 165, height = 130, units = "mm")
+```
+
+## Crossbasis plots
+
+### Generate plot data
+
+The `cb_margeff()` function sets covariates to their mean (or reference level if they are factors) and then runs `predict()` on a range of temperature histories (e.g. `Q_temp_mean, L`).
+
+```{r}
+ht_pd <- cb_margeff(m_hopper_temp_mean, Q_temp_mean, L) 
+htmin_pd <- cb_margeff(m_hopper_temp_min, Q_temp_min, L)
+htmax_pd <- cb_margeff(m_hopper_temp_max, Q_temp_max, L)
+hp_pd <- cb_margeff(m_hopper_precip, Q_precip, L) 
+```
+
+
+Create a common scale for fitted values so colors are comparable.
+
+```{r}
+hopper_lim <- c(min(exp(ht_pd$fitted), 
+                    exp(htmin_pd$fitted),
+                    exp(htmax_pd$fitted), 
+                    exp(hp_pd$fitted)),
+                max(exp(ht_pd$fitted),
+                    exp(htmin_pd$fitted),
+                    exp(htmax_pd$fitted),
+                    exp(hp_pd$fitted)))
+contour_binwidth <- 0.002 #distance between contour lines (in leafhoppers/leaf)
+```
+
+### Mean Temperature cross-basis
+
+```{r}
+hopper_temp_raster <-
+  ggplot(ht_pd,
+         aes(x = x, y = lag, z = exp(fitted), fill = exp(fitted))) +
+  geom_raster(interpolate = TRUE) +
+  geom_contour(color = "grey50", size = 0.4, binwidth = contour_binwidth) +
+  geom_tile(data = filter(ht_pd, min_dist >= 0.1), color = "grey50", fill = "grey50", alpha = 0.4) +
+  scale_fill_viridis_c("Leafhoppers\nper leaf",
+                       option = "A",
+                       limits = hopper_lim) + 
+  scale_y_continuous("Lag (days)", expand = c(0,0)) + 
+  scale_x_continuous("Daily Mean Temperature (ºC)", expand = c(0,0))
+hopper_temp_raster
+```
+
+WHere is steepest slope?
+
+```{r}
+ht_pd %>% 
+  filter(fitted == max(fitted))
+#10 days lag
+```
+
+
+### Minimum Temperature cross-basis
+
+```{r}
+hopper_min_temp_raster <-
+  ggplot(htmin_pd,
+         aes(x = x, y = lag, z = exp(fitted), fill = exp(fitted))) +
+  geom_raster(interpolate = TRUE) +
+  geom_contour(color = "grey50", size = 0.4, binwidth = contour_binwidth) +
+  geom_tile(data = filter(htmin_pd, min_dist >= 0.1), color = "grey50", fill = "grey50", alpha = 0.4) +
+  scale_fill_viridis_c("Leafhoppers\nper leaf",
+                       option = "A", 
+                       limits = hopper_lim) + 
+  scale_y_continuous("Lag (days)", expand = c(0,0)) + 
+  scale_x_continuous("Daily Minimum Temperature (ºC)", expand = c(0,0))
+hopper_min_temp_raster
+```
+
+### Maximum temperature cross-basis
+
+```{r}
+hopper_max_temp_raster <-
+  ggplot(htmax_pd,
+         aes(x = x, y = lag, z = exp(fitted), fill = exp(fitted))) +
+  geom_raster(interpolate = TRUE) +
+  geom_contour(color = "grey50", size = 0.4, binwidth = contour_binwidth) +
+  geom_tile(data = filter(htmax_pd, min_dist >= 0.1), color = "grey50", fill = "grey50", alpha = 0.4) +
+  scale_fill_viridis_c("Leafhoppers\nper leaf",
+                       option = "A",
+                       limits = hopper_lim) + 
+  scale_y_continuous("Lag (days)", expand = c(0,0)) + 
+  scale_x_continuous("Daily Maximum Temperature (ºC)", expand = c(0,0))
+hopper_max_temp_raster
+```
+
+### Precipitation cross-basis
+
+```{r}
+hopper_precip_raster <-
+  ggplot(hp_pd,
+         aes(x = x, y = lag, z = exp(fitted), fill = exp(fitted))) +
+  geom_raster(interpolate = TRUE) +
+  geom_contour(color = "grey50", size = 0.4, binwidth = contour_binwidth) +
+  geom_tile(data = filter(hp_pd, min_dist >= 0.1), color = "grey50", fill = "grey50", alpha = 0.4) +
+  scale_fill_viridis_c("Leafhoppers\nper leaf",
+                       option = "A",
+                       limits = hopper_lim) + 
+  scale_y_continuous("Lag (days)", expand = c(0,0)) + 
+  scale_x_continuous("Daily Precipitation (mm)", expand = c(0,0))
+hopper_precip_raster
+```
+
+
+
+### Combine raster plots
+
+```{r}
+hopper_cb <-
+  hopper_min_temp_raster +
+  hopper_temp_raster +
+  hopper_max_temp_raster +
+  hopper_precip_raster +
+  plot_layout(guides = "collect") +
+  plot_annotation(tag_levels = "A") &
+  theme_classic() +
+  theme(text = element_text(size = 10))
+hopper_cb
+ggsave(here("figs", "hopper_crossbasis.png"), hopper_cb, width = 165, units = "mm")
+ggsave(here("figs", "figure 2.eps"), hopper_cb, width = 165, units = "mm")
+```
+
+Try adding a rug for weather data
+
+```{r}
+weather <- read_rds(here("data", "cleaned", "weather_lags.rds"))
+weather <- weather %>% 
+  filter(date > min(hoppers$date) - lubridate::days(15),
+         date != max(hoppers$date)) #last day wouldn't show up in lags for any observations
+range(weather$date)
+range(hoppers$date)
+
+hopper_min_temp_raster +
+  geom_rug(data = weather, inherit.aes = FALSE, aes(x = temp_min), color = "grey50") +
+hopper_temp_raster +
+  geom_rug(data = weather, inherit.aes = FALSE, aes(x = temp_mean), color = "grey50") +
+hopper_max_temp_raster +
+  geom_rug(data = weather, inherit.aes = FALSE, aes(x = temp_max), color = "grey50") +
+hopper_precip_raster +
+  geom_rug(data = weather, inherit.aes = FALSE, aes(x = precip), color = "grey50") +
+  plot_layout(guides = "collect") +
+  plot_annotation(tag_levels = "A") &
+  theme_classic() +
+  theme(text = element_text(size = 10))
+ggsave(here("figs", "hopper_crossbasis_rug.png"), width = 165, units = "mm")
+```
+
+
+# Shoot Growth Plots
+
+
+```{r}
+m_shoot_precip <- read_rds(here("analysis", "models",    "m_shoot_precip.rds"))
+m_shoot_temp_max <- read_rds(here("analysis", "models",  "m_shoot_temp_max.rds"))
+m_shoot_temp_mean <- read_rds(here("analysis", "models", "m_shoot_temp_mean.rds"))
+m_shoot_temp_min <- read_rds(here("analysis", "models",  "m_shoot_temp_min.rds"))
+```
+
+## Covariates:
+
+Extract data from GAMs
+
+```{r}
+covar_plot_data <-
+  list(
+    "Mean Temperature" = m_shoot_temp_mean,
+    "Minimum Temperature" = m_shoot_temp_min,
+    "Maximum Temperature" = m_shoot_temp_max,
+    "Precipitation" = m_shoot_precip
+  ) %>%
+  map(~plot_gam(.x, main_var = vars(day_post, diameter))) %>% 
+  map_df(~pluck(.x,"data"), .id = "model")
+```
+
+Days post-harvest
+
+```{r}
+dph_plot <-
+  covar_plot_data %>% 
+  filter(term == "day_post") %>% 
+  ggplot(aes(x = value, y = fit, color = model)) +
+  geom_ribbon(aes(ymin = ll, ymax = ul), 
+              fill = "grey", linetype = 0, alpha = 0.5) +
+  geom_line(size = 1) +
+  geom_rug(data = shootdf,
+           aes(day_post),
+           inherit.aes = FALSE,
+           alpha = 0.03) +
+  scale_y_continuous(limits = c(0, 0.6)) +
+  labs(x = "Days post harvest", y = "Shoot growth (cm/day)", color = "Model") +
+  theme_bw()
+dph_plot
+```
+
+```{r}
+dia_plot <- 
+  covar_plot_data %>% 
+  filter(term == "diameter") %>% 
+  ggplot(aes(x = value, y = fit, color = model)) +
+  geom_ribbon(aes(ymin = ll, ymax = ul), 
+              fill = "grey", linetype = 0, alpha = 0.5) +
+  geom_line(size = 1) +
+  geom_rug(data = shootdf,
+           aes(diameter),
+           inherit.aes = FALSE,
+           alpha = 0.03) +
+  scale_y_continuous(limits = c(0, 0.6)) +
+  labs(x = "Stem Diameter (mm)", y = "Shoot growth (cm/day)", color = "Model") +
+  theme_bw()
+dia_plot
+```
+
+
+Shoots with larger diameters grow faster.  Shoot growth rates vary through time in a more complex manner with the fastest growth happening about 10 days post harvest and the slowest growth around 25 days post harvest.
+
+
+```{r}
+covars <-
+  dia_plot + 
+  (dph_plot +
+     theme(axis.title.y = element_blank(),
+           axis.text.y = element_blank(),
+           axis.ticks.y = element_blank())) + 
+  plot_layout(guides = "collect") + plot_annotation(tag_levels = "A")
+```
+
+```{r}
+ggsave(here("figs", "shoot_covariates.png"), covars, width = 165, height = 80, units = "mm")
+ggsave(here("figs", "figure 4.tiff"), covars, width = 165, height = 80, units = "mm")
+```
+
+## Crossbasis plots
+### Generate data
+
+```{r}
+st_pd <- cb_margeff(m_shoot_temp_mean, Q_temp_mean, L) 
+stmin_pd <- cb_margeff(m_shoot_temp_min, Q_temp_min, L)
+stmax_pd <- cb_margeff(m_shoot_temp_max, Q_temp_max, L)
+sp_pd <- cb_margeff(m_shoot_precip, Q_precip, L)
+```
+
+Uniform scale across plots:
+
+```{r}
+growth_lims <- c(min(st_pd$fitted, 
+                     sp_pd$fitted,
+                     stmin_pd$fitted, 
+                     stmax_pd$fitted),
+                 max(st_pd$fitted,
+                     sp_pd$fitted,
+                     stmin_pd$fitted,
+                     stmax_pd$fitted))
+contour_binwidth <- 0.01 #distance between contour lines (in cm)
+```
+
+### Mean Temperature cross-basis
+
+Raster version:
+
+```{r}
+shoot_temp_raster <-
+  ggplot(st_pd, aes(x = x, y = lag, z = fitted, fill = fitted)) +
+  geom_raster(interpolate = TRUE) +
+  geom_contour(color = "grey50", size = 0.4, binwidth = contour_binwidth) +
+  geom_tile(data = filter(st_pd, min_dist >= 0.1), color = "grey50", fill = "grey50", alpha = 0.4) +
+  scale_fill_viridis_c("Shoot growth\n(cm/day)", option = "A", limits = growth_lims) + 
+  scale_y_continuous("Lag (days)", expand = c(0,0)) + 
+  scale_x_continuous("Daily Mean Temperature (ºC)", expand = c(0,0)) 
+shoot_temp_raster
+```
+
+
+### Min temperature cross-basis
+
+```{r}
+shoot_min_temp_raster <-
+  ggplot(stmin_pd,
+         aes(x = x, y = lag, z = fitted, fill = fitted)) +
+  geom_raster(interpolate = TRUE) +
+  geom_contour(color = "grey50", size = 0.4, binwidth = contour_binwidth) +
+  geom_tile(data = filter(stmin_pd, min_dist >= 0.1), color = "grey50", fill = "grey50", alpha = 0.4) +
+  scale_fill_viridis_c("Shoot growth\n(cm/day)", option = "A", limits = growth_lims) + 
+  scale_y_continuous("Lag (days)", expand = c(0,0)) + 
+  scale_x_continuous("Daily Minimum Temperature (ºC)", expand = c(0,0)) 
+shoot_min_temp_raster
+```
+
+### Max temperature cross-basis
+
+```{r}
+shoot_max_temp_raster <-
+  ggplot(stmax_pd,
+         aes(x = x, y = lag, z = fitted, fill = fitted)) +
+  geom_raster(interpolate = TRUE) +
+  geom_contour(color = "grey50", size = 0.4, binwidth = contour_binwidth) +
+  geom_tile(data = filter(stmax_pd, min_dist >= 0.1), color = "grey50", fill = "grey50", alpha = 0.4) +
+  scale_fill_viridis_c("Shoot growth\n(cm/day)", option = "A", limits = growth_lims) + 
+  scale_y_continuous("Lag (days)", expand = c(0,0)) + 
+  scale_x_continuous("Daily Maximum Temperature (ºC)", expand = c(0,0))
+shoot_max_temp_raster
+```
+
+### Precip cross-basis
+
+Raster version:
+
+```{r}
+shoot_precip_raster <-
+  ggplot(sp_pd,
+         aes(x = x, y = lag, z = fitted, fill = fitted)) +
+  geom_raster(interpolate = TRUE) +
+  geom_contour(color = "grey50", size = 0.4, binwidth = contour_binwidth) +
+  geom_tile(data = filter(sp_pd, min_dist >= 0.1), color = "grey50", fill = "grey50", alpha = 0.4) +
+  scale_fill_viridis_c("Shoot growth\n(cm/day)", option = "A", limits = growth_lims) + 
+  scale_y_continuous("Lag (days)", expand = c(0,0)) + 
+  scale_x_continuous("Daily Precipitation (mm)", expand = c(0,0))
+shoot_precip_raster
+```
+
+Combine raster plots
+```{r}
+shoot_cb <-
+  shoot_min_temp_raster + shoot_temp_raster + shoot_max_temp_raster + shoot_precip_raster +
+  plot_layout(guides = "collect") + 
+  plot_annotation(tag_levels = "A") &
+  theme_classic() +
+  theme(text = element_text(size = 10))
+shoot_cb
+ggsave(here("figs", "shoot_crossbasis.png"), shoot_cb, width = 165, units = "mm")
+ggsave(here("figs", "figure 3.eps"), shoot_cb, width = 165, units = "mm")
+```
+
+Try adding a rug for weather data
+
+```{r}
+weather <- read_rds(here("data", "cleaned", "weather_lags.rds"))
+weather <- weather %>% 
+  filter(date > min(shootdf$date) - lubridate::days(15),
+         date != max(shootdf$date)) #last day wouldn't show up in lags for any observations
+range(weather$date)
+range(shootdf$date)
+
+shoot_min_temp_raster +
+  geom_rug(data = weather, inherit.aes = FALSE, aes(x = temp_min), color = "grey50") +
+shoot_temp_raster +
+  geom_rug(data = weather, inherit.aes = FALSE, aes(x = temp_mean), color = "grey50") +
+shoot_max_temp_raster +
+  geom_rug(data = weather, inherit.aes = FALSE, aes(x = temp_max), color = "grey50") +
+shoot_precip_raster +
+  geom_rug(data = weather, inherit.aes = FALSE, aes(x = precip), color = "grey50") +
+  plot_layout(guides = "collect") +
+  plot_annotation(tag_levels = "A") &
+  theme_classic() +
+  theme(text = element_text(size = 10))
+ggsave(here("figs", "shoot_crossbasis_rug.png"), width = 165, units = "mm")
+```
