@@ -366,7 +366,8 @@ hopper_cb <-
   hopper_precip_raster +
   plot_layout(guides = "collect") +
   plot_annotation(tag_levels = "A") &
-  theme_classic()
+  theme_classic() +
+  theme(text = element_text(size = 10))
 hopper_cb
 ggsave(here("figs", "hopper_crossbasis.png"), hopper_cb, width = 165, units = "mm")
 ggsave(here("figs", "figure 2.eps"), hopper_cb, width = 165, units = "mm")
@@ -392,6 +393,7 @@ hopper_precip_raster +
   geom_rug(data = weather, inherit.aes = FALSE, aes(x = precip), color = "grey50") +
   plot_layout(guides = "collect") +
   plot_annotation(tag_levels = "A") &
-  theme_classic()
+  theme_classic() +
+  theme(text = element_text(size = 10))
 ggsave(here("figs", "hopper_crossbasis_rug.png"), width = 165, units = "mm")
 ```

@@ -353,7 +353,8 @@ shoot_cb <-
   shoot_min_temp_raster + shoot_temp_raster + shoot_max_temp_raster + shoot_precip_raster +
   plot_layout(guides = "collect") + 
   plot_annotation(tag_levels = "A") &
-  theme_classic()
+  theme_classic() +
+  theme(text = element_text(size = 10))
 shoot_cb
 ggsave(here("figs", "shoot_crossbasis.png"), shoot_cb, width = 165, units = "mm")
 ggsave(here("figs", "figure 3.eps"), shoot_cb, width = 165, units = "mm")
@@ -379,6 +380,7 @@ shoot_precip_raster +
   geom_rug(data = weather, inherit.aes = FALSE, aes(x = precip), color = "grey50") +
   plot_layout(guides = "collect") +
   plot_annotation(tag_levels = "A") &
-  theme_classic()
-ggsave(here("figs", "shoot_crossbasis_rug.png"), shoot_cb, width = 165, units = "mm")
+  theme_classic() +
+  theme(text = element_text(size = 10))
+ggsave(here("figs", "shoot_crossbasis_rug.png"), width = 165, units = "mm")
 ```

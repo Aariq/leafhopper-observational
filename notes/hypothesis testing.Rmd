@@ -90,7 +90,7 @@ I'll now go through an example with the effects of mean temperature on leafhoppe
 
 -   `s(day_post, bs = "cr")` - A potentially non-linear effect of days post harvest
 
--   `s(counter, bs = "re")`  - A random effect of who did the data collection (three observers)
+-   `s(counter, bs = "re")` - A random effect of who did the data collection (three observers)
 
 -   `s(interharvest_id, bs = "re")` - A random effect of harvest (date range x field ID).
 
