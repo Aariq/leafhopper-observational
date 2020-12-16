@@ -143,6 +143,15 @@ hopper_min_temp_raster <-
   scale_x_continuous("Daily Minimum Temperature (ºC)", expand = c(0,0))
 hopper_min_temp_raster
 ```
+Where is steepest slope?
+
+```{r}
+htmin_pd %>% 
+  filter(min_dist < 0.1) %>% 
+  filter(fitted == max(fitted))
+#11 days lag
+```
+11 days, if you don't count the hatched area.
 
 ### Maximum temperature cross-basis
 
@@ -159,6 +168,14 @@ hopper_max_temp_raster <-
   scale_y_continuous("Lag (days)", expand = c(0,0)) + 
   scale_x_continuous("Daily Maximum Temperature (ºC)", expand = c(0,0))
 hopper_max_temp_raster
+```
+Where is steepest slope?
+
+```{r}
+htmax_pd %>% 
+  filter(min_dist < 0.1) %>% 
+  filter(fitted == max(fitted))
+#11 days lag
 ```
 
 ### Precipitation cross-basis
@@ -178,7 +195,14 @@ hopper_precip_raster <-
 hopper_precip_raster
 ```
 
+Where is steepest slope?
 
+```{r}
+hp_pd %>% 
+  filter(min_dist < 0.1) %>% 
+  filter(fitted == max(fitted))
+#9 days lag
+```
 
 ### Combine raster plots
 

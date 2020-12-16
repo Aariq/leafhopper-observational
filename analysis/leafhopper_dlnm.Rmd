@@ -16,6 +16,12 @@ knitr::opts_chunk$set(echo = TRUE, paged.print = FALSE)
 options(scipen = 4)
 ```
 
+# TODO
+
+-   for these new hypotheses tests to work, I need to fix the penalization for the covariates at whatever they are in the full model.
+
+-   I might be able to do this with the `sp` parameter, or possibly by setting `k` and using `fx = TRUE`
+
 *Last compiled: `r Sys.Date()`*
 
 ```{r packages, message=FALSE, warning=FALSE}
@@ -24,7 +30,6 @@ library(here)
 library(conflicted)
 library(mgcv)
 library(dlnm)
-library(colorspace)
 library(bbmle)
 
 conflict_prefer("filter", "dplyr")
@@ -33,12 +38,30 @@ conflict_prefer("lag", "dplyr")
 conflict_prefer("select", "dplyr")
 ```
 
+# Methods
 
-# Goal
+This analysis is based on Gasparrini A, Scheipl F, Armstrong B, Kenward MG (2017) A penalized framework for distributed lag non-linear models. Biometrics 73:938--948. doi: 10.1111/biom.12645. Specifically, it is based on `ex1_01.int.R` provided in their code. This "internal" method for distributed lag models takes full(?) advantage of built in features of `gam`s.
 
-This analysis is based on Gasparrini A, Scheipl F, Armstrong B, Kenward MG (2017) A penalized framework for distributed lag non-linear models. Biometrics 73:938–948. doi: 10.1111/biom.12645.  Specifically, it is based on `ex1_01.int.R` provided in their code.  This "internal" method for distributed lag models takes full(?) advantage of built in features of `gam`s.
+The goal is to model the effects of temperature and precipitation on leafhoppers as having a non-linear, lagged effect.
 
-The goal is to model the effects of temperature and precipitation on leafhoppers as having a quadratic, lagged effect.  The lag is modeled as a penalized cubic regression spline and the effect of temperature as a 2nd order polynomial in a crossbasis smoother. In an ideal world, the penalized spline would be the shrinkage version (bs = "cs"), but that isn't available in the crossbasis smooth constructor provided by `dlnm`.
+# Hypotheses
+
+To achieve this goal, I'll test three hypotheses for each weather variable (min, mean, and max daily tempearture, and precipitation)
+
+1.  Is *smooth* function necessary?
+
+    -   H~A~: Full model including crossbasis smooth for weather variable over 15 days lag.
+    -   H~0~: replace crossbasis term with mean of temperature in past 15 days
+
+2.  Is there an effect of temperature?
+
+    -   H~A~: Same as H~A~ from \#1 above
+    -   H~0~: Remove the weather variable term entirely
+
+3.  Is there a single lagged effect?
+
+    -   H~A~: Use the weather variable at a lag with maximum effect suggested by the DLNM (e.g. mean temperature 10 days ago) as a parameteric (not smoothed) term.
+    -   H~0~: Same as H~0~ from \#2 above
 
 # Read in Data
 
@@ -49,12 +72,29 @@ head(hoppers)
 # str(hoppers)
 ```
 
+Remove any rows with missing values
 
-# Distributed Lag Model: "internal" method
+```{r}
+hoppers <-
+  hoppers %>%
+  rowwise() %>%
+  filter(!is.na(sum(Q_temp_max)))
+```
 
-## Build the GAMs
+```{r}
+#calculate mean of past 15 days
+hoppers <-
+  hoppers %>%
+  mutate(mean_temp_mean = mean(Q_temp_mean),
+         mean_temp_min = mean(Q_temp_min),
+         mean_temp_max = mean(Q_temp_max),
+         mean_precip = mean(Q_precip)) %>% 
+  ungroup()
+```
 
-Temp and precip are highly concurve, so can't trust p-values. I'll do the models separately.
+# Build the full models
+
+Temp and precip are highly concurve, so cannot include all weather variables as predictors in the same model.
 
 ```{r}
 m_hopper_temp_mean <- 
@@ -74,7 +114,9 @@ m_hopper_temp_mean <-
       data = hoppers,
       gamma = 1.2,
       method = "REML")
+```
 
+```{r}
 m_hopper_temp_min <- 
   gam(hoppers ~
         s(Q_temp_min, L,
@@ -92,7 +134,9 @@ m_hopper_temp_min <-
       data = hoppers,
       gamma = 1.2,
       method = "REML")
+```
 
+```{r}
 m_hopper_temp_max <- 
   gam(hoppers ~
         s(Q_temp_max, L,
@@ -110,7 +154,9 @@ m_hopper_temp_max <-
       data = hoppers,
       gamma = 1.2,
       method = "REML")
+```
 
+```{r}
 m_hopper_precip <- 
   gam(hoppers ~
         s(Q_precip, L,
@@ -131,10 +177,19 @@ m_hopper_precip <-
 ```
 
 ```{r}
-ICtab(m_hopper_temp_mean, m_hopper_temp_min, m_hopper_temp_max, m_hopper_precip)
+AICtab(m_hopper_temp_mean, m_hopper_temp_min, m_hopper_temp_max, m_hopper_precip)
 ```
 
 Minimum temperature model "wins"
+
+# Save models
+
+```{r}
+write_rds(m_hopper_precip, here("analysis", "models", "m_hopper_precip.rds"))
+write_rds(m_hopper_temp_max, here("analysis", "models", "m_hopper_temp_max.rds"))
+write_rds(m_hopper_temp_mean, here("analysis", "models", "m_hopper_temp_mean.rds"))
+write_rds(m_hopper_temp_min, here("analysis", "models", "m_hopper_temp_min.rds"))
+```
 
 # Mean Temperature
 
@@ -146,24 +201,89 @@ sum(residuals(m_hopper_temp_mean, type = "pearson")^2) / df.residual(m_hopper_te
 gam.check(m_hopper_temp_mean)
 ```
 
-not overdispersed
+Not overdispersed, appropriate numbers of knots used, residuals meet assumptions (mostly).
 
-## Significance test
+## Marginal Hypothesis test
+
+P-values for covariates. P-values for crossbasis obtained through specific LRT below.
 
 ```{r}
 anova.gam(m_hopper_temp_mean)
 ```
 
-Significant effect of plant (parametric factor), temperature, precip, days post harvest, and diameter on growth.
-
-## Plot regular smooths of covariates
+## H1: Is smooth necessary?
 
 ```{r}
-plot.gam(m_hopper_temp_mean, pages = 1, residuals = FALSE, all.terms = TRUE)
-plot.gam(m_hopper_temp_min, pages = 1, residuals = FALSE, all.terms = TRUE)
-plot.gam(m_hopper_temp_max, pages = 1, residuals = FALSE, all.terms = TRUE)
-plot.gam(m_hopper_precip, pages = 1, residuals = FALSE, all.terms = TRUE)
+sp_hopper_temp_mean <- m_hopper_temp_mean$sp
+
+m_hopper_temp_mean1 <- 
+  gam(hoppers ~
+        mean_temp_mean +
+        s(day_post, bs = "cr", sp = sp_hopper_temp_mean["s(day_post)"]) +
+        # s(day_post, bs = "cr", fx = TRUE, k = 3) +
+        s(counter, bs = "re") + #no difference with random vs. fixed
+        # counter +
+        s(interharvest_id, bs = "re") +
+        s(plant, bs = "re"),
+      family = poisson(),
+      offset = log(n_leaves),
+      data = hoppers,
+      gamma = 1.2,
+      method = "REML")
+
+h_temp_mean_h1 <- anova.gam(m_hopper_temp_mean1, m_hopper_temp_mean,  test = "Chisq")
+h_temp_mean_h1
 ```
+
+Yes, smooth is significantly better than just a mean of the past 15 days.
+
+## H2: Is there an effect of daily mean temp?
+
+```{r}
+m_hopper_temp_mean_null <- 
+  gam(hoppers ~
+        s(day_post, bs = "cr", sp = sp_hopper_temp_mean["s(day_post)"]) +
+        s(counter, bs = "re") + #no difference with random vs. fixed
+        # counter +
+        s(interharvest_id, bs = "re") +
+        s(plant, bs = "re"),
+      family = poisson(),
+      offset = log(n_leaves),
+      data = hoppers,
+      gamma = 1.2,
+      method = "REML")
+
+h_temp_mean_h2 <- anova.gam(m_hopper_temp_mean_null, m_hopper_temp_mean, test = "Chisq")
+h_temp_mean_h2
+#larger residual DF means smaller estimated degrees of freedom
+```
+
+Yes, there is a significant effect of lagged mean daily temperature on leafhoppers
+
+## H3: Is there an effect of mean temperature 10 days prior to observation?
+
+According to plot of full model, 10 days of lag has steepest slope
+
+```{r}
+m_hopper_temp_mean3 <- 
+  gam(hoppers ~
+        Q_temp_mean[ , 10] +
+        s(day_post, bs = "cr", sp = sp_hopper_temp_mean["s(day_post)"]) +
+        s(counter, bs = "re") + #no difference with random vs. fixed
+        # counter +
+        s(interharvest_id, bs = "re") +
+        s(plant, bs = "re"),
+      family = poisson(),
+      offset = log(n_leaves),
+      data = hoppers,
+      gamma = 1.2,
+      method = "REML")
+
+h_temp_mean_h3 <- anova.gam(m_hopper_temp_mean_null, m_hopper_temp_mean3, test = "Chisq")
+h_temp_mean_h3
+```
+
+Significant effect of mean temp 10 days ago
 
 # Minimum temperature
 
@@ -175,15 +295,90 @@ gam.check(m_hopper_temp_min)
 sum(residuals(m_hopper_temp_min, type = "pearson")^2) / df.residual(m_hopper_temp_min)
 ```
 
-## Significance test
+## Marginal Hypothesis test
+
+P-values for covariates. P-values for crossbasis obtained through specific LRT below.
 
 ```{r}
 anova.gam(m_hopper_temp_min)
 ```
 
-Min temp is significant
+## H1: Is smooth necessary?
+
+```{r}
+sp_hopper_temp_min <- m_hopper_temp_min$sp
+
+m_hopper_temp_min1 <- 
+  gam(hoppers ~
+        mean_temp_min +
+        s(day_post, bs = "cr", sp = sp_hopper_temp_min["s(day_post)"]) +
+        s(counter, bs = "re") + #no difference with random vs. fixed
+        # counter +
+        s(interharvest_id, bs = "re") +
+        s(plant, bs = "re"),
+      family = poisson(),
+      offset = log(n_leaves),
+      data = hoppers,
+      gamma = 1.2,
+      method = "REML")
+
+h_temp_min_h1 <- anova.gam(m_hopper_temp_min1, m_hopper_temp_min,  test = "Chisq")
+h_temp_min_h1
+```
+
+Yes, the smooth is a significant improvment over just mean minimum temperature
+
+## H2: Is there an effect of min temp?
+
+```{r}
+m_hopper_temp_min_null <- 
+  gam(hoppers ~
+        s(day_post, bs = "cr", sp = sp_hopper_temp_min["s(day_post)"]) +
+        s(counter, bs = "re") + #no difference with random vs. fixed
+        # counter +
+        s(interharvest_id, bs = "re") +
+        s(plant, bs = "re"),
+      family = poisson(),
+      offset = log(n_leaves),
+      data = hoppers,
+      gamma = 1.2,
+      method = "REML")
+
+h_temp_min_h2 <- anova.gam(m_hopper_temp_min_null, m_hopper_temp_min, test = "Chisq")
+h_temp_min_h2
+#larger residual DF means smaller estimated degrees of freedom
+```
+
+yes, highly significant effect of temperature
+
+## H3: Is there an effect of min temp 11 days prior to observation?
+
+According to plot of full model, 11 days of lag has steepest slope, if you don't count the area not well supported by data.
+
+```{r}
+m_hopper_temp_min3 <- 
+  gam(hoppers ~
+        Q_temp_min[ , 11] +
+        s(day_post, bs = "cr", sp = sp_hopper_temp_min["s(day_post)"]) +
+        s(counter, bs = "re") + #no difference with random vs. fixed
+        # counter +
+        s(interharvest_id, bs = "re") +
+        s(plant, bs = "re"),
+      family = poisson(),
+      offset = log(n_leaves),
+      data = hoppers,
+      gamma = 1.2,
+      method = "REML")
+
+h_temp_min_h3 <- anova.gam(m_hopper_temp_min_null, m_hopper_temp_min3, test = "Chisq")
+h_temp_min_h3
+```
+
+Significant effect of temp 11 days ago.
 
 # Maximum temperature
+
+## Inspect the GAM
 
 ```{r}
 gam.check(m_hopper_temp_max)
@@ -191,46 +386,309 @@ gam.check(m_hopper_temp_max)
 sum(residuals(m_hopper_temp_max, type = "pearson")^2) / df.residual(m_hopper_temp_max)
 ```
 
+## Marginal Hypothesis test
+
+P-values for covariates. P-values for crossbasis obtained through specific LRT below.
+
 ```{r}
 anova.gam(m_hopper_temp_max)
 ```
 
-max temp also highly significant.
+## H1: Is smooth necessary?
+
+```{r}
+sp_hopper_temp_max <- m_hopper_temp_max$sp
+m_hopper_temp_max1 <- 
+  gam(hoppers ~
+        mean_temp_max +
+        s(day_post, bs = "cr", sp = sp_hopper_temp_max["s(day_post)"]) +
+        s(counter, bs = "re") + #no difference with random vs. fixed
+        # counter +
+        s(interharvest_id, bs = "re") +
+        s(plant, bs = "re"),
+      family = poisson(),
+      offset = log(n_leaves),
+      data = hoppers,
+      gamma = 1.2,
+      method = "REML")
+
+h_temp_max_h1 <- anova.gam(m_hopper_temp_max1, m_hopper_temp_max,  test = "Chisq")
+h_temp_max_h1
+```
+
+Smooth is marginally significant
+
+## H2: Is there an effect of max temp?
+
+```{r}
+m_hopper_temp_max_null <- 
+  gam(hoppers ~
+        s(day_post, bs = "cr", sp = sp_hopper_temp_max["s(day_post)"]) +
+        s(counter, bs = "re") + #no difference with random vs. fixed
+        # counter +
+        s(interharvest_id, bs = "re") +
+        s(plant, bs = "re"),
+      family = poisson(),
+      offset = log(n_leaves),
+      data = hoppers,
+      gamma = 1.2,
+      method = "REML")
+
+h_temp_max_h2 <- anova.gam(m_hopper_temp_max_null, m_hopper_temp_max, test = "Chisq")
+h_temp_max_h2
+#larger residual DF means smaller estimated degrees of freedom
+```
+
+Significant effect of crossbasis
+
+## H3: Is there an effect of min temp 11 days prior to observation?
+
+According to plot of full model, 11 days of lag has steepest slope, if you don't count the area not well supported by data.
+
+```{r}
+m_hopper_temp_max3 <- 
+  gam(hoppers ~
+        Q_temp_max[ , 11] +
+        s(day_post, bs = "cr", sp = sp_hopper_temp_max["s(day_post)"]) +
+        s(counter, bs = "re") + #no difference with random vs. fixed
+        # counter +
+        s(interharvest_id, bs = "re") +
+        s(plant, bs = "re"),
+      family = poisson(),
+      offset = log(n_leaves),
+      data = hoppers,
+      gamma = 1.2,
+      method = "REML")
+
+h_temp_max_h3 <- anova.gam(m_hopper_temp_max_null, m_hopper_temp_max3, test = "Chisq")
+h_temp_max_h3
+```
+
+Significant effect of maximum temperature 11 days ago
 
 # Precip
 
-Inspect gam:
+## Inspect GAM
 
 ```{r}
 gam.check(m_hopper_precip)
+sum(residuals(m_hopper_precip, type = "pearson")^2) / df.residual(m_hopper_precip)
 ```
 
-
+## Marginal hypothesis test
 
 ```{r}
 anova.gam(m_hopper_precip)
 ```
 
-significant effect of precip, but not of date.
+Marginally significant effect of day
 
-### Plot regular smooths for co-variates
-
-Not significant, so these won't be in the paper
+## H1: Is smooth necessary?
 
 ```{r}
-plot.gam(m_hopper_precip,
-         all.terms = TRUE,
-         pages = 1,
-         shift = coef(m_hopper_precip)[1]
-         )
+sp_hopper_precip <- m_hopper_precip$sp
+
+m_hopper_precip1 <- 
+  gam(hoppers ~
+        mean_precip +
+        s(day_post, bs = "cr", sp = sp_hopper_precip["s(day_post)"]) +
+        s(counter, bs = "re") + #no difference with random vs. fixed
+        # counter +
+        s(interharvest_id, bs = "re") +
+        s(plant, bs = "re"),
+      family = poisson(),
+      offset = log(n_leaves),
+      data = hoppers,
+      gamma = 1.2,
+      method = "REML")
+
+h_precip_h1 <- anova.gam(m_hopper_precip1, m_hopper_precip,  test = "Chisq")
+h_precip_h1
 ```
 
-# Save models
+Yes, crossbasis smooth is significantly better than just mean over past 15 days.
+
+## H2: Is there an effect of max temp?
 
 ```{r}
-write_rds(m_hopper_precip, here("analysis", "models", "m_hopper_precip.rds"))
-write_rds(m_hopper_temp_max, here("analysis", "models", "m_hopper_temp_max.rds"))
-write_rds(m_hopper_temp_mean, here("analysis", "models", "m_hopper_temp_mean.rds"))
-write_rds(m_hopper_temp_min, here("analysis", "models", "m_hopper_temp_min.rds"))
+m_hopper_precip_null <- 
+  gam(hoppers ~
+        s(day_post, bs = "cr", sp = sp_hopper_precip["s(day_post)"]) +
+        s(counter, bs = "re") + #no difference with random vs. fixed
+        # counter +
+        s(interharvest_id, bs = "re") +
+        s(plant, bs = "re"),
+      family = poisson(),
+      offset = log(n_leaves),
+      data = hoppers,
+      gamma = 1.2,
+      method = "REML")
+h_precip_h2 <- anova.gam(m_hopper_precip_null, m_hopper_precip, test = "Chisq")
+h_precip_h2
+#larger residual DF means smaller estimated degrees of freedom
 ```
 
+Precipitation has a significant effect.
+
+## H3: Is there an effect of min temp 9 days prior to observation?
+
+According to plot of full model, 9 days of lag has steepest slope, if you don't count the area not well supported by data.
+
+```{r}
+m_hopper_precip3 <- 
+  gam(hoppers ~
+        Q_precip[ , 9] +
+        s(day_post, bs = "cr", sp = sp_hopper_precip["s(day_post)"]) +
+        s(counter, bs = "re") + #no difference with random vs. fixed
+        # counter +
+        s(interharvest_id, bs = "re") +
+        s(plant, bs = "re"),
+      family = poisson(),
+      offset = log(n_leaves),
+      data = hoppers,
+      gamma = 1.2,
+      method = "REML")
+
+h_precip_h3 <- anova.gam(m_hopper_precip_null, m_hopper_precip3, test = "Chisq")
+h_precip_h3
+```
+
+No significant effect of precip exactly 9 days ago.
+
+# Table
+
+I want to make a table like:
+
++------------------+---------+-------+-------+-----------+------------+-------+-------------+----------------------+
+| Weather Variable | Full... | Model | H1:   | Is smooth | necessary? | H2:   | Main effect | of weather variable? |
++==================+=========+=======+=======+===========+============+=======+=============+======================+
+|                  | R2      | AIC   | Df    | X2        | p-value    | df    | X2          | p-value              |
++------------------+---------+-------+-------+-----------+------------+-------+-------------+----------------------+
+| min temp         |         |       |       |           |            |       |             |                      |
++------------------+---------+-------+-------+-----------+------------+-------+-------------+----------------------+
+| mean temp        |         |       |       |           |            |       |             |                      |
++------------------+---------+-------+-------+-----------+------------+-------+-------------+----------------------+
+| max temp         |         |       |       |           |            |       |             |                      |
++------------------+---------+-------+-------+-----------+------------+-------+-------------+----------------------+
+| precip           |         |       |       |           |            |       |             |                      |
++------------------+---------+-------+-------+-----------+------------+-------+-------------+----------------------+
+
+Collect model statistics:
+
+```{r}
+full_models <- list(m_hopper_temp_min,
+                    m_hopper_temp_mean,
+                    m_hopper_temp_max,
+                    m_hopper_precip)
+h1 <- list(h_temp_min_h1,
+           h_temp_mean_h1,
+           h_temp_max_h1,
+           h_precip_h1)
+
+h2 <- list(h_temp_min_h2,
+           h_temp_mean_h2,
+           h_temp_max_h2,
+           h_precip_h2)
+
+df <- 
+  tibble(weather_var = c("Minimum daily temperature",
+                         "Mean daily temperature",
+                         "Maximum daily temperature",
+                         "Total daily precipitation"),
+         r2 = map_dbl(full_models, ~summary(.x)$r.sq),
+         aic = map_dbl(full_models, AIC),
+         h1_df = map_dbl(h1, ~pull(.x, "Df")[2]),
+         h1_x2 = map_dbl(h1, ~pull(.x, "Deviance")[2]),
+         h1_p = map_dbl(h1, ~pull(.x, "Pr(>Chi)")[2]),
+         h2_df = map_dbl(h2, ~pull(.x, "Df")[2]),
+         h2_x2 = map_dbl(h2, ~pull(.x, "Deviance")[2]),
+         h2_p = map_dbl(h2, ~pull(.x, "Pr(>Chi)")[2]),
+  ) 
+
+df
+
+```
+
+Does `gt` produce tables that work in Word?
+
+```{r}
+library(gt)
+library(gtsummary)
+# gt(df)
+```
+
+Yeah, seems like I can copy-paste into Word just fine.
+
+```{r}
+table1 <- 
+  gt(df, rowname_col = "weather_var") %>% 
+  tab_spanner(
+    label = "DLNM",
+    columns = vars(r2, aic)
+  ) %>% 
+  tab_spanner(
+    label = md("H1"),
+    columns = starts_with("h1_")
+  ) %>% 
+  tab_spanner(
+    label = "H2",
+    columns = starts_with("h2")
+  )
+  
+
+table1 %>% 
+  fmt(
+    columns = ends_with("_p"),
+    fns = gtsummary::style_pvalue
+  ) %>% 
+  fmt_number(
+    columns = vars(r2, h1_df, h1_x2, h2_df, h2_x2),
+    decimals = 2
+  ) %>% 
+  fmt(
+    columns = vars(aic),
+    fns = round
+  ) %>% 
+  cols_label(
+    r2 = html("R<sup>2</sup>"),
+    aic = "AIC",
+    h1_df = "df",
+    h2_df = "df",
+    # h1_x2 = md("$\\Chi^2$") #markdown not working?
+    h1_x2 = html("X<sup>2</sup>"),
+    h2_x2 = html("X<sup>2</sup>"),
+    h1_p = "P",
+    h2_p = "P"
+  )
+```
+
+# Exploration of how edf works
+
+If I constrain the `sp` parameter, does it constrain the resulting EDF? Kindof...
+
+```{r}
+library(magrittr)
+m_hopper_temp_mean$edf %>%
+  enframe() %>%
+  mutate(name = str_remove(name, ".\\d+")) %>%
+  group_by(name) %>%
+  summarize(edf = sum(value)) %T>%
+  print() %>% 
+  summarize(total = sum(edf))
+
+m_hopper_temp_mean1$edf %>%
+  enframe() %>%
+  mutate(name = str_remove(name, ".\\d+")) %>%
+  group_by(name) %>%
+  summarize(edf = sum(value)) %T>%
+  print() %>% 
+  summarize(total = sum(edf))
+
+m_hopper_temp_mean_null$edf %>%
+  enframe() %>%
+  mutate(name = str_remove(name, ".\\d+")) %>%
+  group_by(name) %>%
+  summarize(edf = sum(value)) %T>%
+  print() %>% 
+  summarize(total = sum(edf))
+```
