@@ -11,6 +11,14 @@ output:
     number_sections: yes
 ---
 
+#TODO:
+
+- ~~Figure 1 should include entire time range used for data~~
+- Add grey rectangle for missing values in weather?
+- ~~Calculate mean daily min, mean, max temperatures for entire range.~~
+- ~~Re-do precip calculations (mean, % of rainy days) for entire range.~~
+- Concurvity models broke.  Just need to update variable names, I think.
+
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
@@ -38,8 +46,24 @@ Also a supplementary plot showing concurvity of temp and precip.
 
 ```{r data, echo=TRUE}
 df <- read_rds(here("data", "cleaned", "hopper-weather.rds"))
+weather_full <- read_rds(here("data", "cleaned", "weather_lags.rds"))
 ```
 
+# Filter to include only dates used
+Right now, I'm using weather up to 15 days prior to observations
+
+```{r}
+#first observsation:
+min(df$date)
+#first date for weather:
+min(df$date) - days(15)
+
+weather_full <-
+  weather_full %>% 
+  filter(date >= min(df$date) - days(15)) %>% 
+  #don't need matrix-colums
+  select(-starts_with("Q_"), -starts_with("L"))
+```
 
 # Summary tables
 
@@ -53,9 +77,9 @@ df %>%
             median_precip = median(precip, na.rm = TRUE),
             mean_density = mean(hoppers/n_leaves))
 
-df %>% 
+df %>%
     summarize(length = last(date) - first(date),
-            mean_temp = mean(temp_mean),
+            mean_temp_mean = mean(temp_mean),
             mean_precip = mean(precip, na.rm = TRUE),
             max_precip = max(precip, na.rm = TRUE),
             mean_density = mean(hoppers/n_leaves))
@@ -87,8 +111,9 @@ densityplot <-
   geom_line(size = 1, lineend = "round") +
   theme_bw() +
   labs(x = "Date", y = "Leafhopper Density (insects/leaf)", color = "Harvest") +
-  scale_x_date(date_breaks = "3 days", labels = label_date(format = "%b %d")) +
+  scale_x_date(date_breaks = "3 days", labels = label_date(format = "%b %d"), limits = range(weather_full$date)) +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
+densityplot
 ```
 
 
@@ -105,15 +130,8 @@ ggplot(df, aes(x = date, y = hoppers/n_leaves, group = plant)) +
 # Figure 1
 
 ```{r}
-weatherdf <- 
-  df %>% group_by(date) %>% 
-  summarize(precip_mm = first(precip),
-            temp_mean = first(temp_mean),
-            temp_min = first(temp_min),
-            temp_max = first(temp_max))
-
 precip_plot <- 
-  ggplot(weatherdf, aes(x = date, y = precip_mm)) +
+  ggplot(weather_full, aes(x = date, y = precip)) +
   geom_col(fill = "darkblue") +
   theme_bw() +
   scale_y_continuous("Precipitation (mm)") +
@@ -122,7 +140,7 @@ precip_plot <-
         axis.title.x.bottom = element_blank())
 
 temp_plot <-
-  ggplot(weatherdf, aes(x = date)) +
+  ggplot(weather_full, aes(x = date)) +
   geom_line(aes(y = temp_mean), color = "red") +
   geom_line(aes(y = temp_min), color = "red", lty = "dashed") +
   geom_line(aes(y = temp_max), color = "red", lty = "dashed") +
@@ -134,8 +152,11 @@ temp_plot <-
 ```
 
 ```{r}
-plot1 <- precip_plot/temp_plot/densityplot + plot_layout(heights = c(2,2,3.5)) + plot_annotation(tag_levels = "A") &
+plot1 <- precip_plot/temp_plot/densityplot +
+  plot_layout(heights = c(2,2,3.5)) +
+  plot_annotation(tag_levels = "A") &
   theme(text = element_text(size = 9))
+plot1
 ggsave(here("figs", "exploratory.png"), plot1, width = 165, height = 150, units = "mm")
 ggsave(here("figs", "figure 1.eps"), plot1, width = 165, height = 150, units = "mm")
 ```
@@ -222,12 +243,10 @@ anova.gam(test)
 # Descriptives
 
 ```{r}
-weatherdf %>% 
-  summarize(temp_grandmean = mean(temp_mean),
-            temp_sd = sd(temp_mean),
-            precip_mean = mean(precip_mm, na.rm = TRUE),
-            precip_sd = sd(precip_mm, na.rm = TRUE),
-            rainy_days_percent = sum(precip_mm >0, na.rm = TRUE)/n())
+weather_full %>% 
+  summarize(across(-date, list(mean = ~mean(.x, na.rm = TRUE),
+                               sd = ~sd(.x, na.rm = TRUE))),
+            rainy_days_percent = sum(precip >0, na.rm = TRUE)/n())
 ```
 
 ```{r}
