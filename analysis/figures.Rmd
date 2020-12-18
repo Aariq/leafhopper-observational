@@ -109,8 +109,8 @@ hopper_temp_raster <-
   ggplot(ht_pd,
          aes(x = x, y = lag, z = exp(fitted), fill = exp(fitted))) +
   geom_raster(interpolate = TRUE) +
+  geom_raster(data = filter(ht_pd, min_dist >= 0.1), fill = "white", alpha = 0.4) +
   geom_contour(color = "grey50", size = 0.4, binwidth = contour_binwidth) +
-  geom_tile(data = filter(ht_pd, min_dist >= 0.1), color = "grey50", fill = "grey50", alpha = 0.4) +
   scale_fill_viridis_c("Leafhoppers\nper leaf",
                        option = "A",
                        limits = hopper_lim) + 
@@ -135,8 +135,8 @@ hopper_min_temp_raster <-
   ggplot(htmin_pd,
          aes(x = x, y = lag, z = exp(fitted), fill = exp(fitted))) +
   geom_raster(interpolate = TRUE) +
+  geom_raster(data = filter(htmin_pd, min_dist >= 0.1), fill = "white", alpha = 0.4) +
   geom_contour(color = "grey50", size = 0.4, binwidth = contour_binwidth) +
-  geom_tile(data = filter(htmin_pd, min_dist >= 0.1), color = "grey50", fill = "grey50", alpha = 0.4) +
   scale_fill_viridis_c("Leafhoppers\nper leaf",
                        option = "A", 
                        limits = hopper_lim) + 
@@ -161,8 +161,8 @@ hopper_max_temp_raster <-
   ggplot(htmax_pd,
          aes(x = x, y = lag, z = exp(fitted), fill = exp(fitted))) +
   geom_raster(interpolate = TRUE) +
+  geom_raster(data = filter(htmax_pd, min_dist >= 0.1), fill = "white", alpha = 0.4) +
   geom_contour(color = "grey50", size = 0.4, binwidth = contour_binwidth) +
-  geom_tile(data = filter(htmax_pd, min_dist >= 0.1), color = "grey50", fill = "grey50", alpha = 0.4) +
   scale_fill_viridis_c("Leafhoppers\nper leaf",
                        option = "A",
                        limits = hopper_lim) + 
@@ -186,8 +186,8 @@ hopper_precip_raster <-
   ggplot(hp_pd,
          aes(x = x, y = lag, z = exp(fitted), fill = exp(fitted))) +
   geom_raster(interpolate = TRUE) +
+  geom_raster(data = filter(hp_pd, min_dist >= 0.1), fill = "white", alpha = 0.4) +
   geom_contour(color = "grey50", size = 0.4, binwidth = contour_binwidth) +
-  geom_tile(data = filter(hp_pd, min_dist >= 0.1), color = "grey50", fill = "grey50", alpha = 0.4) +
   scale_fill_viridis_c("Leafhoppers\nper leaf",
                        option = "A",
                        limits = hopper_lim) + 
@@ -219,8 +219,8 @@ hopper_cb <-
   theme_classic() &
   theme(text = element_text(size = 10))
 hopper_cb
-ggsave(here("figs", "hopper_crossbasis.png"), hopper_cb, width = 165, units = "mm")
-ggsave(here("figs", "figure 2.eps"), hopper_cb, width = 165, units = "mm")
+ggsave(here("figs", "hopper_crossbasis.png"), hopper_cb, width = 165, height = 120, units = "mm")
+ggsave(here("figs", "figure 2.eps"), hopper_cb, width = 165, height = 120, units = "mm")
 ```
 
 Try adding a rug for weather data
@@ -233,19 +233,25 @@ weather <- weather %>%
 range(weather$date)
 range(hoppers$date)
 
-hopper_min_temp_raster +
-  geom_rug(data = weather, inherit.aes = FALSE, aes(x = temp_min), color = "grey50") +
+hopper_cb_rug <-
+  hopper_min_temp_raster +
+  geom_rug(data = weather, inherit.aes = FALSE, aes(x = temp_min), color = "white") +
 hopper_temp_raster +
-  geom_rug(data = weather, inherit.aes = FALSE, aes(x = temp_mean), color = "grey50") +
+  geom_rug(data = weather, inherit.aes = FALSE, aes(x = temp_mean), color = "white") +
 hopper_max_temp_raster +
-  geom_rug(data = weather, inherit.aes = FALSE, aes(x = temp_max), color = "grey50") +
+  geom_rug(data = weather, inherit.aes = FALSE, aes(x = temp_max), color = "white") +
 hopper_precip_raster +
-  geom_rug(data = weather, inherit.aes = FALSE, aes(x = precip), color = "grey50") +
-  plot_layout(guides = "collect") +
+  geom_rug(data = weather, inherit.aes = FALSE, aes(x = precip), color = "white")
+
+hopper_cb_rug <- 
+  hopper_cb_rug +
+  plot_layout(guides = "collect") &
+  coord_cartesian(ylim = c(1,15)) &
   plot_annotation(tag_levels = "A") &
-  theme_classic() +
+  theme_classic() &
   theme(text = element_text(size = 10))
-ggsave(here("figs", "hopper_crossbasis_rug.png"), width = 165, units = "mm")
+
+ggsave(here("figs", "hopper_crossbasis_rug.png"), hopper_cb_rug, width = 165, height = 120, units = "mm")
 ```
 
 
@@ -364,8 +370,8 @@ Raster version:
 shoot_temp_raster <-
   ggplot(st_pd, aes(x = x, y = lag, z = fitted, fill = fitted)) +
   geom_raster(interpolate = TRUE) +
+  geom_raster(data = filter(st_pd, min_dist >= 0.1), fill = "white", alpha = 0.4) +
   geom_contour(color = "grey50", size = 0.4, binwidth = contour_binwidth) +
-  geom_tile(data = filter(st_pd, min_dist >= 0.1), color = "grey50", fill = "grey50", alpha = 0.4) +
   scale_fill_viridis_c("Shoot growth\n(cm/day)", option = "A", limits = growth_lims) + 
   scale_y_continuous("Lag (days)", expand = c(0,0)) + 
   scale_x_continuous("Daily Mean Temperature (ºC)", expand = c(0,0)) 
@@ -380,8 +386,8 @@ shoot_min_temp_raster <-
   ggplot(stmin_pd,
          aes(x = x, y = lag, z = fitted, fill = fitted)) +
   geom_raster(interpolate = TRUE) +
+  geom_raster(data = filter(stmin_pd, min_dist >= 0.1), fill = "white", alpha = 0.4) +
   geom_contour(color = "grey50", size = 0.4, binwidth = contour_binwidth) +
-  geom_tile(data = filter(stmin_pd, min_dist >= 0.1), color = "grey50", fill = "grey50", alpha = 0.4) +
   scale_fill_viridis_c("Shoot growth\n(cm/day)", option = "A", limits = growth_lims) + 
   scale_y_continuous("Lag (days)", expand = c(0,0)) + 
   scale_x_continuous("Daily Minimum Temperature (ºC)", expand = c(0,0)) 
@@ -395,8 +401,8 @@ shoot_max_temp_raster <-
   ggplot(stmax_pd,
          aes(x = x, y = lag, z = fitted, fill = fitted)) +
   geom_raster(interpolate = TRUE) +
+  geom_raster(data = filter(stmax_pd, min_dist >= 0.1), fill = "white", alpha = 0.4) +
   geom_contour(color = "grey50", size = 0.4, binwidth = contour_binwidth) +
-  geom_tile(data = filter(stmax_pd, min_dist >= 0.1), color = "grey50", fill = "grey50", alpha = 0.4) +
   scale_fill_viridis_c("Shoot growth\n(cm/day)", option = "A", limits = growth_lims) + 
   scale_y_continuous("Lag (days)", expand = c(0,0)) + 
   scale_x_continuous("Daily Maximum Temperature (ºC)", expand = c(0,0))
@@ -412,8 +418,8 @@ shoot_precip_raster <-
   ggplot(sp_pd,
          aes(x = x, y = lag, z = fitted, fill = fitted)) +
   geom_raster(interpolate = TRUE) +
+  geom_raster(data = filter(sp_pd, min_dist >= 0.1), fill = "white", alpha = 0.4) +
   geom_contour(color = "grey50", size = 0.4, binwidth = contour_binwidth) +
-  geom_tile(data = filter(sp_pd, min_dist >= 0.1), color = "grey50", fill = "grey50", alpha = 0.4) +
   scale_fill_viridis_c("Shoot growth\n(cm/day)", option = "A", limits = growth_lims) + 
   scale_y_continuous("Lag (days)", expand = c(0,0)) + 
   scale_x_continuous("Daily Precipitation (mm)", expand = c(0,0))
@@ -424,13 +430,18 @@ Combine raster plots
 ```{r}
 shoot_cb <-
   shoot_min_temp_raster + shoot_temp_raster + shoot_max_temp_raster + shoot_precip_raster +
-  plot_layout(guides = "collect") + 
+  plot_layout(guides = "collect") &
+  coord_cartesian(ylim = c(1,15)) &
   plot_annotation(tag_levels = "A") &
-  theme_classic() +
+  theme_classic() &
   theme(text = element_text(size = 10))
+```
+
+
+```{r}
 shoot_cb
-ggsave(here("figs", "shoot_crossbasis.png"), shoot_cb, width = 165, units = "mm")
-ggsave(here("figs", "figure 3.eps"), shoot_cb, width = 165, units = "mm")
+ggsave(here("figs", "shoot_crossbasis.png"), shoot_cb, width = 165, height = 120, units = "mm")
+ggsave(here("figs", "figure 3.eps"), shoot_cb, width = 165, height = 120, units = "mm")
 ```
 
 Try adding a rug for weather data
@@ -443,17 +454,27 @@ weather <- weather %>%
 range(weather$date)
 range(shootdf$date)
 
-shoot_min_temp_raster +
-  geom_rug(data = weather, inherit.aes = FALSE, aes(x = temp_min), color = "grey50") +
+shoot_cb_rug <- 
+  shoot_min_temp_raster +
+  geom_rug(data = weather, inherit.aes = FALSE, aes(x = temp_min),color = "white") +
 shoot_temp_raster +
-  geom_rug(data = weather, inherit.aes = FALSE, aes(x = temp_mean), color = "grey50") +
+  geom_rug(data = weather, inherit.aes = FALSE, aes(x = temp_mean), color = "white") +
 shoot_max_temp_raster +
-  geom_rug(data = weather, inherit.aes = FALSE, aes(x = temp_max), color = "grey50") +
+  geom_rug(data = weather, inherit.aes = FALSE, aes(x = temp_max), color = "white") +
 shoot_precip_raster +
-  geom_rug(data = weather, inherit.aes = FALSE, aes(x = precip), color = "grey50") +
-  plot_layout(guides = "collect") +
+  geom_rug(data = weather, inherit.aes = FALSE, aes(x = precip), color = "white")
+
+shoot_cb_rug <-
+  shoot_cb_rug +
+  plot_layout(guides = "collect") &
+  coord_cartesian(ylim = c(1,15)) &
   plot_annotation(tag_levels = "A") &
-  theme_classic() +
+  theme_classic() &
   theme(text = element_text(size = 10))
-ggsave(here("figs", "shoot_crossbasis_rug.png"), width = 165, units = "mm")
+```
+
+
+```{r}
+shoot_cb_rug
+ggsave(here("figs", "shoot_crossbasis_rug.png"), shoot_cb_rug, width = 165, height = 120, units = "mm")
 ```
