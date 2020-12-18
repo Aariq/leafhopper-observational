@@ -98,7 +98,8 @@ hopper_lim <- c(min(exp(ht_pd$fitted),
                     exp(htmin_pd$fitted),
                     exp(htmax_pd$fitted),
                     exp(hp_pd$fitted)))
-contour_binwidth <- 0.002 #distance between contour lines (in leafhoppers/leaf)
+
+contour_binwidth <- 0.003 #distance between contour lines (in leafhoppers/leaf)
 ```
 
 ### Mean Temperature cross-basis
@@ -212,9 +213,10 @@ hopper_cb <-
   hopper_temp_raster +
   hopper_max_temp_raster +
   hopper_precip_raster +
-  plot_layout(guides = "collect") +
+  plot_layout(guides = "collect") &
+  coord_cartesian(ylim = c(1,15)) &
   plot_annotation(tag_levels = "A") &
-  theme_classic() +
+  theme_classic() &
   theme(text = element_text(size = 10))
 hopper_cb
 ggsave(here("figs", "hopper_crossbasis.png"), hopper_cb, width = 165, units = "mm")
@@ -351,7 +353,7 @@ growth_lims <- c(min(st_pd$fitted,
                      sp_pd$fitted,
                      stmin_pd$fitted,
                      stmax_pd$fitted))
-contour_binwidth <- 0.01 #distance between contour lines (in cm)
+contour_binwidth <- 0.025 #distance between contour lines (in cm)
 ```
 
 ### Mean Temperature cross-basis

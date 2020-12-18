@@ -144,16 +144,45 @@ weather <- weather %>% filter(!is.na(temp_mean))
 
 
 # Create lagged variables
+```{r paged.print=FALSE}
+nlags = 15
+temp_lags <- map_dfc(1:nlags, ~lag(weather$temp_mean, .x)) %>%
+  set_names(glue("lag_temp_mean_{1:nlags}"))
+temp_min_lags <- map_dfc(1:nlags, ~lag(weather$temp_min, .x)) %>% 
+  set_names(glue("lag_temp_min_{1:nlags}"))
+temp_max_lags <- map_dfc(1:nlags, ~lag(weather$temp_max, .x)) %>% 
+  set_names(glue("lag_temp_max_{1:nlags}"))
+precip_lags <- map_dfc(1:nlags, ~lag(weather$precip, .x)) %>%
+  set_names(glue("lag_precip_{1:nlags}"))
+#matrix defining the lag structure (needed because of missing days)
+L <- map_dfc(1:nlags, ~ as.integer(weather$date - lag(weather$date, .x))) %>% 
+  set_names(glue("L_{1:nlags}"))
+weather_lags <- 
+  bind_cols(weather, temp_lags, temp_min_lags, temp_max_lags, precip_lags, L) %>% 
+  select(date, starts_with("Q_"), starts_with ("L"))
+```
+
+Convert to matrix columns for convenience in modeling
 
 ```{r paged.print=FALSE}
 weather_lags <- 
-  as_tsibble(weather, index = date) %>% 
-  tsibble::fill_gaps() %>% 
-  mutate(Q_precip = Lag(precip, 1:15),
-         Q_temp_mean = Lag(temp_mean, 1:15),
-         Q_temp_min = Lag(temp_min, 1:15),
-         Q_temp_max = Lag(temp_max, 1:15)) %>% 
-  mutate(L = matrix(1:15, byrow=TRUE, ncol = 15, nrow = n()))
+  weather_lags %>% 
+  mutate(
+    Q_temp_mean = as.matrix(select(., starts_with("lag_temp_mean"))),
+    Q_temp_min = as.matrix(select(., starts_with("lag_temp_min"))),
+    Q_temp_max = as.matrix(select(., starts_with("lag_temp_max"))),
+    Q_precip = as.matrix(select(., starts_with("lag_precip"))),
+    L = as.matrix(select(., starts_with("L_"))),
+    ) %>% 
+  select(
+    -starts_with("lag_temp_mean"), 
+    -starts_with("lag_temp_min"),
+    -starts_with("lag_temp_max"),
+    -starts_with("lag_precip"),
+    -starts_with("L_")
+  )
+
+weather_lags <- full_join(weather, weather_lags)
 ```
 
 
