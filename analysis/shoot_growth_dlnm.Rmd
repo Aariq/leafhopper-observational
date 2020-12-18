@@ -26,12 +26,7 @@ library(here)
 library(conflicted)
 library(mgcv)
 library(dlnm)
-library(glue)
-library(colorspace)
-library(patchwork)
 library(bbmle)
-library(visibly) #for ggplot figures from GAMs
-library(lubridate)
 
 conflict_prefer("filter", "dplyr")
 conflict_prefer("here", "here")
