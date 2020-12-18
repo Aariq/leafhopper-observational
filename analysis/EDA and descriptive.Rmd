@@ -14,7 +14,7 @@ output:
 #TODO:
 
 - ~~Figure 1 should include entire time range used for data~~
-- Add grey rectangle for missing values in weather?
+- ~~Add grey rectangle for missing values in weather?~~
 - ~~Calculate mean daily min, mean, max temperatures for entire range.~~
 - ~~Re-do precip calculations (mean, % of rainy days) for entire range.~~
 - Concurvity models broke.  Just need to update variable names, I think.
@@ -130,20 +130,46 @@ ggplot(df, aes(x = date, y = hoppers/n_leaves, group = plant)) +
 # Figure 1
 
 ```{r}
-precip_plot <- 
+max(weather_full$precip, na.rm = TRUE)
+precip_plot <-
   ggplot(weather_full, aes(x = date, y = precip)) +
   geom_col(fill = "darkblue") +
+  annotate(
+    geom = "segment",
+    x = c(weather_full$date[4], weather_full$date[5]),
+    xend = c(weather_full$date[4], weather_full$date[5]),
+    y = c(0, 0),
+    yend = c(83.8, 83.8),
+    color = "grey50",
+    alpha = 0.5,
+    size = 2.5
+  ) +
   theme_bw() +
   scale_y_continuous("Precipitation (mm)") +
   scale_x_date(date_breaks = "3 days", labels = label_date(format = "%b %d")) +
   theme(axis.text.x.bottom = element_blank(),
         axis.title.x.bottom = element_blank())
+```
 
+
+```{r}
+which(is.na(weather_full$temp_mean))
+min(weather_full$temp_min, na.rm = TRUE)
+max(weather_full$temp_max, na.rm = TRUE)
 temp_plot <-
   ggplot(weather_full, aes(x = date)) +
   geom_line(aes(y = temp_mean), color = "red") +
   geom_line(aes(y = temp_min), color = "red", lty = "dashed") +
   geom_line(aes(y = temp_max), color = "red", lty = "dashed") +
+  annotate(geom = "segment",
+           x = c(weather_full$date[4], weather_full$date[5]),
+           xend = c(weather_full$date[4], weather_full$date[5]),
+           y = c(10, 10),
+           yend = c(39.276, 39.276),
+           color = "grey50",
+           alpha = 0.5,
+           size = 2.5
+  ) +
   theme_bw() +
   scale_y_continuous("Temperature (ºC)") +
   scale_x_date(date_breaks = "3 days", labels = label_date(format = "%b %d")) +
@@ -155,67 +181,84 @@ temp_plot <-
 plot1 <- precip_plot/temp_plot/densityplot +
   plot_layout(heights = c(2,2,3.5)) +
   plot_annotation(tag_levels = "A") &
+  scale_x_date(date_breaks = "3 days",
+               labels = label_date(format = "%b %d"),
+               limits = range(weather_full$date),
+               expand = c(0,0)) &
   theme(text = element_text(size = 9))
 plot1
-ggsave(here("figs", "exploratory.png"), plot1, width = 165, height = 150, units = "mm")
+ggsave(here("figs", "figure 1.png"), plot1, width = 165, height = 150, units = "mm")
 ggsave(here("figs", "figure 1.eps"), plot1, width = 165, height = 150, units = "mm")
 ```
-
+Grey bars represent two days of missing weather data.
 
 # Correlation / concurvity supplementary plot
+
 ```{r}
 shootdf <- read_rds(here("data", "cleaned", "shoots.rds"))
 library(dlnm)
 ```
 
-
 ```{r}
-Q_temp <-
+#remove rows with NAs
+
+df <- 
   shootdf %>% 
-  select(starts_with("temp_lag")) %>% 
-  as.matrix()
+  rowwise() %>%
+  filter(!is.na(sum(Q_temp_max)))
 
-# is.na(Q_temp) %>% colSums()
-
-Q_precip <-
-  shootdf %>%
-  select(starts_with("precip_lag")) %>% 
-  as.matrix()
-
-L <- 
-  shootdf %>% 
-  select(starts_with("L")) %>% 
-  as.matrix()
-# head(L)
-```
-
-
-```{r}
 m_shoots <- 
   gam(growth ~ 
         #cross-basis function for temperature
-        s(Q_temp, L,
+        s(Q_temp_mean, L,
           bs = "cb",
-          k = c(5, 7),
+          k = c(10, 14),
           xt = list(bs = "cr")
           ) +
         #cross-basis function for precipitation
         s(Q_precip, L,
           bs = "cb",
-          k = c(5, 7),
+          k = c(10, 14),
           xt = list(bs = "cr")
           ) +
-        s(day_post, bs = "cs") + s(diameter, bs = "cs") + #co-variates
+        s(day_post, bs = "cr") + s(diameter, bs = "cr") + #co-variates
         s(interharvest_id, bs = "re") + s(plant, bs = "re"), #random effects
-      data = shootdf,
+      data = df,
+      gamma = 1.2,
       family = scat, #because residuals are very leptokurtic w/ gaussian
       method = "REML")
+
+
+m_hopper <- 
+  gam(hoppers ~
+        s(Q_precip, L,
+          bs = "cb",
+          k = c(10, 14),
+          xt = list(bs = "cr")
+        ) +
+        s(Q_temp_mean, L,
+          bs = "cb",
+          k = c(10, 14),
+          xt = list(bs = "cr")
+        ) +
+        s(day_post, bs = "cr") +
+        s(counter, bs = "re") + #no difference with random vs. fixed
+        # counter +
+        s(interharvest_id, bs = "re") +
+        s(plant, bs = "re"),
+      family = poisson(),
+      offset = log(n_leaves),
+      data = hoppers,
+      gamma = 1.2,
+      method = "REML")
+summary(m_hopper)
 ```
 
 ```{r eval = FALSE}
-#is this because of the NAs?
-concurvity(m_shoots, full = TRUE)
-concurvity(m_shoots, full = FALSE)
+#concurvity() doesn't work with NAs in the data.
+concurvity(m_hopper, full = TRUE)
+concurvity(m_hopper, full = FALSE)
+predict(m_hopper)
 ```
 
 Precip and temp are concurve meaning they might be redundant in the model.  This makes sense as temperature and precip are generally correlated to some extent.
