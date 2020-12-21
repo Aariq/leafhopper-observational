@@ -124,7 +124,7 @@ WHere is steepest slope?
 ```{r}
 ht_pd %>% 
   filter(fitted == max(fitted))
-#10 days lag
+#9 days lag
 ```
 
 
@@ -149,10 +149,10 @@ Where is steepest slope?
 ```{r}
 htmin_pd %>% 
   filter(min_dist < 0.1) %>% 
+  filter(x > 12) %>% 
   filter(fitted == max(fitted))
-#11 days lag
+#1 days lag and maybe also 8-10 days?
 ```
-11 days, if you don't count the hatched area.
 
 ### Maximum temperature cross-basis
 
@@ -176,7 +176,7 @@ Where is steepest slope?
 htmax_pd %>% 
   filter(min_dist < 0.1) %>% 
   filter(fitted == max(fitted))
-#11 days lag
+#10 days lag
 ```
 
 ### Precipitation cross-basis
@@ -202,7 +202,7 @@ Where is steepest slope?
 hp_pd %>% 
   filter(min_dist < 0.1) %>% 
   filter(fitted == max(fitted))
-#9 days lag
+#12 days lag
 ```
 
 ### Combine raster plots
