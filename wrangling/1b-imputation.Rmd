@@ -1,7 +1,7 @@
 ---
 title: "Imputation of missing temperature values"
 author: "Eric R. Scott"
-date: "Date Initiated"
+date: "2020-12-21"
 output: 
   html_notebook: 
     highlight: kate
