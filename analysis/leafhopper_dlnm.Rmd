@@ -22,8 +22,6 @@ options(scipen = 4)
 
 -   I might be able to do this with the `sp` parameter, or possibly by setting `k` and using `fx = TRUE`
 
--   This isn't the past 15 days anymore. It's longer for some observations. These two missing days of weather data are really fucking me over. I think I just need to interpolate those two dates. FUCK.
-
 *Last compiled: `r Sys.Date()`*
 
 ```{r packages, message=FALSE, warning=FALSE}
@@ -215,8 +213,6 @@ anova.gam(m_hopper_temp_mean)
 
 ## H1: Is smooth necessary?
 
-For these tests to make sense, I need to keep the edf for all smooths roughly the same (see `?anova.gam`). To that end, I'll extract the smoothing penalties from the full model and apply them to these nested models. Without doing this, occasionally the less complex model will have higher estimated degrees of freedom and the tests don't make sense.
-
 ```{r}
 sp_hopper_temp_mean <- m_hopper_temp_mean$sp
 
@@ -266,12 +262,12 @@ Yes, there is a significant effect of lagged mean daily temperature on leafhoppe
 
 ## H3: Is there an effect of mean temperature 10 days prior to observation?
 
-According to plot of full model, 9 days of lag has steepest slope
+According to plot of full model, 10 days of lag has steepest slope
 
 ```{r}
 m_hopper_temp_mean3 <- 
   gam(hoppers ~
-        Q_temp_mean[ , 9] +
+        Q_temp_mean[ , 10] +
         s(day_post, bs = "cr", sp = sp_hopper_temp_mean["s(day_post)"]) +
         s(counter, bs = "re") + #no difference with random vs. fixed
         # counter +
@@ -355,14 +351,14 @@ h_temp_min_h2
 
 yes, highly significant effect of temperature
 
-## H3: Is there an effect of min temp 9 days prior to observation?
+## H3: Is there an effect of min temp 11 days prior to observation?
 
-According to plot of full model, 9 days of lag has steepest slope, if you don't count the area not well supported by data.
+According to plot of full model, 11 days of lag has steepest slope, if you don't count the area not well supported by data.
 
 ```{r}
 m_hopper_temp_min3 <- 
   gam(hoppers ~
-        Q_temp_min[ , 9] +
+        Q_temp_min[ , 11] +
         s(day_post, bs = "cr", sp = sp_hopper_temp_min["s(day_post)"]) +
         s(counter, bs = "re") + #no difference with random vs. fixed
         # counter +
@@ -445,14 +441,14 @@ h_temp_max_h2
 
 Significant effect of crossbasis
 
-## H3: Is there an effect of min temp 9 days prior to observation?
+## H3: Is there an effect of min temp 11 days prior to observation?
 
-According to plot of full model, 9 days of lag has steepest slope, if you don't count the area not well supported by data.
+According to plot of full model, 11 days of lag has steepest slope, if you don't count the area not well supported by data.
 
 ```{r}
 m_hopper_temp_max3 <- 
   gam(hoppers ~
-        Q_temp_max[ , 9] +
+        Q_temp_max[ , 11] +
         s(day_post, bs = "cr", sp = sp_hopper_temp_max["s(day_post)"]) +
         s(counter, bs = "re") + #no difference with random vs. fixed
         # counter +
@@ -541,7 +537,7 @@ According to plot of full model, 9 days of lag has steepest slope, if you don't 
 ```{r}
 m_hopper_precip3 <- 
   gam(hoppers ~
-        Q_precip[ , 12]+
+        Q_precip[ , 9] +
         s(day_post, bs = "cr", sp = sp_hopper_precip["s(day_post)"]) +
         s(counter, bs = "re") + #no difference with random vs. fixed
         # counter +
@@ -563,19 +559,13 @@ No significant effect of precip exactly 9 days ago.
 
 I want to make a table like:
 
-+------------------+---------+-------+-----+-----------+------------+-----+-------------+----------------------+
 | Weather Variable | Full... | Model | H1: | Is smooth | necessary? | H2: | Main effect | of weather variable? |
-+==================+=========+=======+=====+===========+============+=====+=============+======================+
+|------------------|---------|-------|-----|-----------|------------|-----|-------------|----------------------|
 |                  | R2      | AIC   | Df  | X2        | p-value    | df  | X2          | p-value              |
-+------------------+---------+-------+-----+-----------+------------+-----+-------------+----------------------+
 | min temp         |         |       |     |           |            |     |             |                      |
-+------------------+---------+-------+-----+-----------+------------+-----+-------------+----------------------+
 | mean temp        |         |       |     |           |            |     |             |                      |
-+------------------+---------+-------+-----+-----------+------------+-----+-------------+----------------------+
 | max temp         |         |       |     |           |            |     |             |                      |
-+------------------+---------+-------+-----+-----------+------------+-----+-------------+----------------------+
 | precip           |         |       |     |           |            |     |             |                      |
-+------------------+---------+-------+-----+-----------+------------+-----+-------------+----------------------+
 
 Collect model statistics:
 

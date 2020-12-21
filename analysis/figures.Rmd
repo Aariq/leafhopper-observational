@@ -124,7 +124,7 @@ WHere is steepest slope?
 ```{r}
 ht_pd %>% 
   filter(fitted == max(fitted))
-#9 days lag
+#10 days lag
 ```
 
 
@@ -148,10 +148,9 @@ Where is steepest slope?
 
 ```{r}
 htmin_pd %>% 
-  filter(lag < 14) %>% 
   filter(min_dist < 0.1) %>% 
   filter(fitted == max(fitted))
-#9 days lag
+#11 days lag
 ```
 11 days, if you don't count the hatched area.
 
@@ -175,10 +174,9 @@ Where is steepest slope?
 
 ```{r}
 htmax_pd %>% 
-  filter(lag < 15) %>% 
   filter(min_dist < 0.1) %>% 
   filter(fitted == max(fitted))
-#9 days lag
+#11 days lag
 ```
 
 ### Precipitation cross-basis
@@ -204,7 +202,7 @@ Where is steepest slope?
 hp_pd %>% 
   filter(min_dist < 0.1) %>% 
   filter(fitted == max(fitted))
-#12 days lag
+#9 days lag
 ```
 
 ### Combine raster plots
@@ -379,13 +377,6 @@ shoot_temp_raster <-
   scale_x_continuous("Daily Mean Temperature (ºC)", expand = c(0,0)) 
 shoot_temp_raster
 ```
-```{r}
-st_pd %>% 
-  filter(lag < 15) %>% 
-  filter(min_dist < 0.1) %>% 
-  filter(fitted == max(fitted))
-#9 days lag
-```
 
 
 ### Min temperature cross-basis
@@ -402,13 +393,6 @@ shoot_min_temp_raster <-
   scale_x_continuous("Daily Minimum Temperature (ºC)", expand = c(0,0)) 
 shoot_min_temp_raster
 ```
-```{r}
-stmin_pd %>% 
-  filter(lag <= 15) %>% 
-  filter(min_dist < 0.1) %>% 
-  filter(fitted == max(fitted))
-#15 days lag
-```
 
 ### Max temperature cross-basis
 
@@ -423,13 +407,6 @@ shoot_max_temp_raster <-
   scale_y_continuous("Lag (days)", expand = c(0,0)) + 
   scale_x_continuous("Daily Maximum Temperature (ºC)", expand = c(0,0))
 shoot_max_temp_raster
-```
-```{r}
-stmax_pd %>% 
-  filter(lag < 15) %>% 
-  filter(min_dist < 0.1) %>% 
-  filter(fitted == max(fitted))
-#7 days lag
 ```
 
 ### Precip cross-basis
@@ -447,13 +424,6 @@ shoot_precip_raster <-
   scale_y_continuous("Lag (days)", expand = c(0,0)) + 
   scale_x_continuous("Daily Precipitation (mm)", expand = c(0,0))
 shoot_precip_raster
-```
-```{r}
-sp_pd %>% 
-  filter(lag < 15) %>% 
-  filter(min_dist < 0.1) %>% 
-  filter(fitted == max(fitted))
-#11 days lag
 ```
 
 Combine raster plots

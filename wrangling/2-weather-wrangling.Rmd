@@ -26,7 +26,6 @@ conflict_prefer("lag", "dplyr")
 conflict_prefer("interval", "lubridate")
 ```
 
-
 # Purpose
 
 There are essentially two sources of data I will use in this document.  1) the data taken *on site* at Shanfu Tea Company, by me, and 2) local weather station data.  The on-site data spans most of June and July and is hourly temperature data from a HOBO logger and daily precipitation data (from only mid-June onwards) from a rain gauge.  The local weather station data is transcribed from hand-written data sheets sent to me as images by Dr. Han and extends backwards in time to May.  I will wrangle both data sources and compare them.
