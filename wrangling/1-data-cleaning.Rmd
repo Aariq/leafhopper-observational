@@ -244,7 +244,13 @@ caas_hourly <-
   mutate(date = make_date(year = Year, month = Month, day = Day)) %>% 
   select(date, Hour, Temperature, Precipitation_mm = Precipitation) %>%#units are in mm.
   arrange(date)
+caas_hourly <-
+  caas_hourly %>%
+  replace_na(list(Precipitation_mm = 0)) #Precipitation values are not actually missing. The temperature logger went down, but the precip was obtained separately.
+```
 
+
+```{r}
 range(caas_hourly$date)
 
 caas_daily <-
@@ -261,5 +267,5 @@ export
 
 ```{r}
 write_rds(caas_daily, here("data", "cleaned", "daily-weather-caas.rds"))
-# write_rds(caas_hourly, here("data", "cleaned", "hourly-weather-caas.rds")) #currently unused.
+write_rds(caas_hourly, here("data", "cleaned", "hourly-weather-caas.rds")) #currently unused.
 ```
