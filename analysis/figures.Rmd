@@ -150,8 +150,9 @@ Where is steepest slope?
 htmin_pd %>% 
   filter(min_dist < 0.1) %>% 
   filter(x > 12) %>% 
+  # filter(x < 22) %>% 
   filter(fitted == max(fitted))
-#1 days lag and maybe also 8-10 days?
+#1 days lag and maybe also 10 days?
 ```
 
 ### Maximum temperature cross-basis
