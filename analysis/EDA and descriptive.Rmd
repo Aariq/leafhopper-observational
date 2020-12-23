@@ -78,15 +78,16 @@ df %>%
             mean_precip = mean(precip, na.rm = TRUE),
             num_rainy = sum(precip > 0, na.rm = TRUE)/n(),
             median_precip = median(precip, na.rm = TRUE),
-            mean_density = mean(hoppers/n_leaves))
-
-df %>%
-    summarize(length = last(date) - first(date),
-            mean_temp_mean = mean(temp_mean),
-            mean_precip = mean(precip, na.rm = TRUE),
-            max_precip = max(precip, na.rm = TRUE),
-            mean_density = mean(hoppers/n_leaves))
-  
+            mean_density = mean(hoppers/n_leaves)) 
+df %>% 
+  summarize(
+    length = last(date) - first(date),
+    across(c(temp_min, temp_mean, temp_max, precip),
+           c(mean = ~mean(.x, na.rm = TRUE), sd = ~sd(.x, na.rm = TRUE)),
+           .names = "{.col}_{.fn}"),
+    num_rainy = sum(precip > 0, na.rm = TRUE)/n(),
+    median_precip = median(precip, na.rm = TRUE)
+  )
 ```
 
 # Leafhopper Density Plot

@@ -22,6 +22,7 @@ library(patchwork)
 library(visibly)
 
 source(here("R", "crossbasis.r"))
+source(here("R", "utils.r"))
 
 conflict_prefer("lag", "dplyr")
 conflict_prefer("filter", "dplyr")
@@ -206,7 +207,7 @@ hp_pd %>%
 #12 days lag
 ```
 
-### Combine raster plots
+## Combine raster plots
 
 ```{r}
 hopper_cb <-
@@ -253,6 +254,13 @@ hopper_cb_rug <-
   theme(text = element_text(size = 10))
 
 ggsave(here("figs", "hopper_crossbasis_rug.png"), hopper_cb_rug, width = 165, height = 120, units = "mm")
+```
+```{r paged.print=FALSE}
+weather$temp_min
+weather %>% filter(temp_min == min(temp_min))
+weather %>% filter(temp_min > 10) %>% filter(temp_min ==min(temp_min))
+
+weather %>% filter(temp_min < 18)
 ```
 
 
@@ -365,8 +373,6 @@ contour_binwidth <- 0.025 #distance between contour lines (in cm)
 
 ### Mean Temperature cross-basis
 
-Raster version:
-
 ```{r}
 shoot_temp_raster <-
   ggplot(st_pd, aes(x = x, y = lag, z = fitted, fill = fitted)) +
@@ -378,7 +384,11 @@ shoot_temp_raster <-
   scale_x_continuous("Daily Mean Temperature (ºC)", expand = c(0,0)) 
 shoot_temp_raster
 ```
-
+```{r}
+st_pd %>% 
+  filter(min_dist < 0.1) %>% filter(fitted == min(fitted))
+```
+lags 1--3 have steepest slope
 
 ### Min temperature cross-basis
 
@@ -395,6 +405,12 @@ shoot_min_temp_raster <-
 shoot_min_temp_raster
 ```
 
+```{r}
+stmin_pd %>% 
+  filter(min_dist < 0.1) %>% filter(fitted == min(fitted))
+```
+again, recent temps have biggest slope
+
 ### Max temperature cross-basis
 
 ```{r}
@@ -409,6 +425,7 @@ shoot_max_temp_raster <-
   scale_x_continuous("Daily Maximum Temperature (ºC)", expand = c(0,0))
 shoot_max_temp_raster
 ```
+also has steepest slope with recent temps
 
 ### Precip cross-basis
 
@@ -427,7 +444,33 @@ shoot_precip_raster <-
 shoot_precip_raster
 ```
 
-Combine raster plots
+```{r}
+sp_pd %>% 
+  filter(min_dist < 0.1) %>% 
+  filter(fitted == max(fitted) | fitted == min(fitted))
+
+sp_pd %>% 
+  filter(min_dist < 0.1) %>% 
+  filter(lag == nearest(lag, 1)) %>% 
+  filter(fitted == max(fitted))
+
+sp_pd %>% 
+  filter(min_dist < 0.1) %>% 
+  filter(lag == nearest(lag, 1)) %>% 
+  filter(fitted == min(fitted))
+
+sp_pd %>% 
+  filter(min_dist < 0.1) %>% 
+  filter(lag == nearest(lag, 12)) %>% 
+  filter(fitted == min(fitted))
+
+```
+
+
+More complicated surface with negative effects recently and positive effects around 12 days lag
+
+
+## Combine raster plots
 ```{r}
 shoot_cb <-
   shoot_min_temp_raster + shoot_temp_raster + shoot_max_temp_raster + shoot_precip_raster +

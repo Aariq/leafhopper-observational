@@ -90,10 +90,10 @@ hoppers <-
          mean_temp_max = mean(Q_temp_max),
          mean_precip = mean(Q_precip)) %>% 
   #and the mean of days 9–12
-  mutate(pick_temp_mean = mean(Q_temp_mean[ , 1:12]),
-         pick_temp_min = mean(Q_temp_min[ , 1:12]),
-         pick_temp_max = mean(Q_temp_max[ , 1:12]),
-         pick_precip = mean(Q_temp_max[ , 1:12])) %>% 
+  mutate(pick_temp_mean = mean(Q_temp_mean[ , 9:12]),
+         pick_temp_min = mean(Q_temp_min[ , 9:12]),
+         pick_temp_max = mean(Q_temp_max[ , 9:12]),
+         pick_precip = mean(Q_temp_max[ , 9:12])) %>% 
   ungroup()
 ```
 
@@ -235,8 +235,8 @@ m_hopper_temp_mean1 <-
       gamma = 1.2,
       method = "REML")
 
-h_temp_mean_h1 <- anova.gam(m_hopper_temp_mean1, m_hopper_temp_mean,  test = "Chisq")
-h_temp_mean_h1
+h1_hopper_temp_mean <- anova.gam(m_hopper_temp_mean1, m_hopper_temp_mean,  test = "Chisq")
+h1_hopper_temp_mean
 ```
 
 Yes, smooth is significantly better than just a mean of the past 15 days.
@@ -257,8 +257,8 @@ m_hopper_temp_mean_null <-
       gamma = 1.2,
       method = "REML")
 
-h_temp_mean_h2 <- anova.gam(m_hopper_temp_mean_null, m_hopper_temp_mean, test = "Chisq")
-h_temp_mean_h2
+h2_hopper_temp_mean <- anova.gam(m_hopper_temp_mean_null, m_hopper_temp_mean, test = "Chisq")
+h2_hopper_temp_mean
 #larger residual DF means smaller estimated degrees of freedom
 ```
 
@@ -283,8 +283,8 @@ m_hopper_temp_mean3 <-
       gamma = 1.2,
       method = "REML")
 
-h_temp_mean_h3 <- anova.gam(m_hopper_temp_mean_null, m_hopper_temp_mean3, test = "Chisq")
-h_temp_mean_h3
+h3_hopper_temp_mean <- anova.gam(m_hopper_temp_mean_null, m_hopper_temp_mean3, test = "Chisq")
+h3_hopper_temp_mean
 ```
 
 Significant effect of mean temp 10 days ago
@@ -326,8 +326,8 @@ m_hopper_temp_min1 <-
       gamma = 1.2,
       method = "REML")
 
-h_temp_min_h1 <- anova.gam(m_hopper_temp_min1, m_hopper_temp_min,  test = "Chisq")
-h_temp_min_h1
+h1_hopper_temp_min <- anova.gam(m_hopper_temp_min1, m_hopper_temp_min,  test = "Chisq")
+h1_hopper_temp_min
 ```
 
 Yes, the smooth is a significant improvment over just mean minimum temperature
@@ -348,8 +348,8 @@ m_hopper_temp_min_null <-
       gamma = 1.2,
       method = "REML")
 
-h_temp_min_h2 <- anova.gam(m_hopper_temp_min_null, m_hopper_temp_min, test = "Chisq")
-h_temp_min_h2
+h2_hopper_temp_min <- anova.gam(m_hopper_temp_min_null, m_hopper_temp_min, test = "Chisq")
+h2_hopper_temp_min
 #larger residual DF means smaller estimated degrees of freedom
 ```
 
@@ -372,8 +372,8 @@ m_hopper_temp_min3 <-
       gamma = 1.2,
       method = "REML")
 
-h_temp_min_h3 <- anova.gam(m_hopper_temp_min_null, m_hopper_temp_min3, test = "Chisq")
-h_temp_min_h3
+h3_hopper_temp_min <- anova.gam(m_hopper_temp_min_null, m_hopper_temp_min3, test = "Chisq")
+h3_hopper_temp_min
 ```
 
 # Maximum temperature
@@ -412,8 +412,8 @@ m_hopper_temp_max1 <-
       gamma = 1.2,
       method = "REML")
 
-h_temp_max_h1 <- anova.gam(m_hopper_temp_max1, m_hopper_temp_max,  test = "Chisq")
-h_temp_max_h1
+h1_hopper_temp_max <- anova.gam(m_hopper_temp_max1, m_hopper_temp_max,  test = "Chisq")
+h1_hopper_temp_max
 ```
 
 Smooth is marginally significant
@@ -434,9 +434,9 @@ m_hopper_temp_max_null <-
       gamma = 1.2,
       method = "REML")
 
-h_temp_max_h2 <- anova.gam(m_hopper_temp_max_null, m_hopper_temp_max,
+h2_hopper_temp_max <- anova.gam(m_hopper_temp_max_null, m_hopper_temp_max,
                            test = "Chisq")
-h_temp_max_h2
+h2_hopper_temp_max
 #larger residual DF means smaller estimated degrees of freedom
 ```
 
@@ -459,8 +459,8 @@ m_hopper_temp_max3 <-
       gamma = 1.2,
       method = "REML")
 
-h_temp_max_h3 <- anova.gam(m_hopper_temp_max_null, m_hopper_temp_max3, test = "Chisq")
-h_temp_max_h3
+h3_hopper_temp_max <- anova.gam(m_hopper_temp_max_null, m_hopper_temp_max3, test = "Chisq")
+h3_hopper_temp_max
 ```
 
 # Precip
@@ -499,8 +499,8 @@ m_hopper_precip1 <-
       gamma = 1.2,
       method = "REML")
 
-h_precip_h1 <- anova.gam(m_hopper_precip1, m_hopper_precip,  test = "Chisq")
-h_precip_h1
+h1_hopper_precip <- anova.gam(m_hopper_precip1, m_hopper_precip,  test = "Chisq")
+h1_hopper_precip
 ```
 
 Yes, crossbasis smooth is significantly better than just mean over past 15 days.
@@ -520,8 +520,8 @@ m_hopper_precip_null <-
       data = hoppers,
       gamma = 1.2,
       method = "REML")
-h_precip_h2 <- anova.gam(m_hopper_precip_null, m_hopper_precip, test = "Chisq")
-h_precip_h2
+h2_hopper_precip <- anova.gam(m_hopper_precip_null, m_hopper_precip, test = "Chisq")
+h2_hopper_precip
 #larger residual DF means smaller estimated degrees of freedom
 ```
 
@@ -544,8 +544,8 @@ m_hopper_precip3 <-
       gamma = 1.2,
       method = "REML")
 
-h_precip_h3 <- anova.gam(m_hopper_precip_null, m_hopper_precip3, test = "Chisq")
-h_precip_h3
+h3_hopper_precip <- anova.gam(m_hopper_precip_null, m_hopper_precip3, test = "Chisq")
+h3_hopper_precip
 ```
 
 # Table
@@ -557,19 +557,19 @@ full_models <- list(m_hopper_temp_min,
                     m_hopper_temp_mean,
                     m_hopper_temp_max,
                     m_hopper_precip)
-h1 <- list(h_temp_min_h1,
-           h_temp_mean_h1,
-           h_temp_max_h1,
-           h_precip_h1)
+h1 <- list(h1_hopper_temp_min,
+           h1_hopper_temp_mean,
+           h1_hopper_temp_max,
+           h1_hopper_precip)
 
-h2 <- list(h_temp_min_h2,
-           h_temp_mean_h2,
-           h_temp_max_h2,
-           h_precip_h2)
-h3 <- list(h_temp_min_h3,
-           h_temp_mean_h3,
-           h_temp_max_h3,
-           h_precip_h3)
+h2 <- list(h2_hopper_temp_min,
+           h2_hopper_temp_mean,
+           h2_hopper_temp_max,
+           h2_hopper_precip)
+h3 <- list(h3_hopper_temp_min,
+           h3_hopper_temp_mean,
+           h3_hopper_temp_max,
+           h3_hopper_precip)
 
 df <- 
   tibble(weather_var = c("Minimum daily temperature",

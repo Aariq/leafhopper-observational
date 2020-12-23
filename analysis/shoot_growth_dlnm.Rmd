@@ -58,16 +58,24 @@ Variables I'll be using:
 - `plant` (random effect): which plant was the shoot on
 - `interharvest_id` (random effect): combination of field ID and which interharvest period it was.  Each field x interharvest period experienced a unique climate history because harvests were not synchronized between the two fields.
 
-# Visual inspection
-
 ```{r}
-ggplot(shootdf, aes(x=growth)) + geom_histogram(bins = 30)
+#calculate mean of past 15 days
+shootdf <-
+  shootdf %>%
+  rowwise() %>% 
+  mutate(mean_temp_mean = mean(Q_temp_mean),
+         mean_temp_min = mean(Q_temp_min),
+         mean_temp_max = mean(Q_temp_max),
+         mean_precip = mean(Q_precip)) %>% 
+  #and the mean of days 1--4
+  mutate(pick_temp_mean = mean(Q_temp_mean[ , 1:4]),
+         pick_temp_min =   mean(Q_temp_min[ , 1:4]),
+         pick_temp_max =   mean(Q_temp_max[ , 1:4]),
+         pick_precip =     mean(Q_temp_max[ , 1:4])) %>% 
+  ungroup()
 ```
 
-
-# Distributed Lag Model: "internal" method
-
-## Fit cross-basis GAMs
+# Build full models
 
 ```{r}
 m_shoot_temp_mean <- 
@@ -84,7 +92,6 @@ m_shoot_temp_mean <-
       family = scat, #because residuals are very leptokurtic w/ gaussian
       gamma = 1.2,
       method = "REML")
-gam.check(m_shoot_temp_mean)
 ```
 
 
@@ -103,7 +110,6 @@ m_shoot_temp_min <-
       family = scat, #because residuals are very leptokurtic w/ gaussian
       gamma = 1.2,
       method = "REML")
-gam.check(m_shoot_temp_min)
 ```
 
 
@@ -122,7 +128,6 @@ m_shoot_temp_max <-
       family = scat, #because residuals are very leptokurtic w/ gaussian
       gamma = 1.2,
       method = "REML")
-gam.check(m_shoot_temp_max)
 ```
 
 ```{r}
@@ -140,7 +145,6 @@ m_shoot_precip <-
       family = scat, #because residuals are very leptokurtic w/ gaussian
       gamma = 1.2,
       method = "REML")
-gam.check(m_shoot_precip)
 ```
 
 
@@ -149,41 +153,6 @@ ICtab(m_shoot_temp_mean, m_shoot_temp_min, m_shoot_temp_max, m_shoot_precip)
 ```
 
 temperature models have the lowest AIC.  Min, max, mean all essentially interchangable.
-
-# Mean Temperature model
-
-```{r}
-anova(m_shoot_temp_mean)
-```
-
-Significant effects of lagged temperature, days post harvest, stem diameter, and plant ID.
-
-# Minimum Temperature model
-
-
-```{r}
-anova(m_shoot_temp_min)
-```
-
-still significant effect of minimum temperature
-
-
-# Maximum temperature model
-
-
-```{r}
-anova(m_shoot_temp_max)
-```
-
-Same, still significant.
-
-# Precipitation model
-
-```{r}
-anova.gam(m_shoot_precip)
-```
-
-In this one, the co-variate `day_post` isn't significant. Odd...
 
 # Save Models
 
@@ -194,3 +163,399 @@ write_rds(m_shoot_temp_mean, here("analysis", "models", "m_shoot_temp_mean.rds")
 write_rds(m_shoot_temp_min, here("analysis", "models",  "m_shoot_temp_min.rds"))
 ```
 
+
+
+# Mean Temperature
+
+## Inspect the GAM
+
+```{r}
+gam.check(m_shoot_temp_mean)
+```
+basis dimensions seem fine despite low p-value for k-index.
+
+## Marginal hypothesis test
+
+```{r}
+anova(m_shoot_temp_mean)
+```
+
+Significant effects of lagged temperature, days post harvest, stem diameter, and plant ID.
+
+## H1: Is smooth necessary?
+
+```{r}
+sp_shoot_temp_mean <- m_shoot_temp_mean$sp
+
+m_shoot_temp_mean1 <- 
+  gam(growth ~ 
+        mean_temp_mean +
+        s(day_post, bs = "cr", sp = sp_shoot_temp_mean["s(day_post)"]) + 
+        s(diameter, k = 15, bs = "cr", sp = sp_shoot_temp_mean["s(diameter)"]) + 
+        s(interharvest_id, bs = "re", sp = sp_shoot_temp_mean["s(interharvest_id)"]) + 
+        s(plant, bs = "re", sp = sp_shoot_temp_mean["s(plant)"]), 
+      data = shootdf,
+      family = scat, #because residuals are very leptokurtic w/ gaussian
+      gamma = 1.2,
+      method = "REML")
+h1_shoot_temp_mean <- anova.gam(m_shoot_temp_mean1, m_shoot_temp_mean,  test = "Chisq")
+h1_shoot_temp_mean
+```
+
+## H2: Is there an effect of crossbasis function?
+
+```{r}
+m_shoot_temp_mean_null <- 
+  gam(growth ~ 
+        s(day_post, bs = "cr", sp = sp_shoot_temp_mean["s(day_post)"]) + 
+        s(diameter, k = 15, bs = "cr", sp = sp_shoot_temp_mean["s(diameter)"]) + 
+        s(interharvest_id, bs = "re", sp = sp_shoot_temp_mean["s(interharvest_id)"]) + 
+        s(plant, bs = "re", sp = sp_shoot_temp_mean["s(plant)"]), 
+      data = shootdf,
+      family = scat, #because residuals are very leptokurtic w/ gaussian
+      gamma = 1.2,
+      method = "REML")
+
+h2_shoot_temp_mean <- anova.gam(m_shoot_temp_mean_null, m_shoot_temp_mean, test = "Chisq")
+h2_shoot_temp_mean
+#larger residual DF means smaller estimated degrees of freedom
+```
+
+## H3: Is there an effect of a specific lag time?
+
+```{r}
+m_shoot_temp_mean3 <- 
+  gam(growth ~ 
+        pick_temp_mean +
+        s(day_post, bs = "cr", sp = sp_shoot_temp_mean["s(day_post)"]) + 
+        s(diameter, k = 15, bs = "cr", sp = sp_shoot_temp_mean["s(diameter)"]) + 
+        s(interharvest_id, bs = "re", sp = sp_shoot_temp_mean["s(interharvest_id)"]) + 
+        s(plant, bs = "re", sp = sp_shoot_temp_mean["s(plant)"]), 
+      data = shootdf,
+      family = scat, #because residuals are very leptokurtic w/ gaussian
+      gamma = 1.2,
+      method = "REML")
+h3_shoot_temp_mean <- anova.gam(m_shoot_temp_mean_null, m_shoot_temp_mean3, test = "Chisq")
+h3_shoot_temp_mean
+```
+
+# Minimum Temperature
+
+## Inspect the GAM
+
+```{r}
+gam.check(m_shoot_temp_min)
+```
+
+## Marginal Hypothesis test
+
+```{r}
+anova(m_shoot_temp_min)
+```
+
+## H1: Is smooth necessary?
+
+```{r}
+sp_shoot_temp_min <- m_shoot_temp_min$sp
+
+m_shoot_temp_min1 <- 
+  gam(growth ~ 
+        mean_temp_min +
+        s(day_post, bs = "cr", sp = sp_shoot_temp_min["s(day_post)"]) + 
+        s(diameter, k = 15, bs = "cr", sp = sp_shoot_temp_min["s(diameter)"]) + 
+        s(interharvest_id, bs = "re", sp = sp_shoot_temp_min["s(interharvest_id)"]) + 
+        s(plant, bs = "re", sp = sp_shoot_temp_min["s(plant)"]), 
+      data = shootdf,
+      family = scat, #because residuals are very leptokurtic w/ gaussian
+      gamma = 1.2,
+      method = "REML")
+h1_shoot_temp_min <- anova.gam(m_shoot_temp_min1, m_shoot_temp_min,  test = "Chisq")
+h1_shoot_temp_min
+```
+
+## H2: Is there an effect of crossbasis function?
+
+```{r}
+m_shoot_temp_min_null <- 
+  gam(growth ~ 
+        s(day_post, bs = "cr", sp = sp_shoot_temp_min["s(day_post)"]) + 
+        s(diameter, k = 15, bs = "cr", sp = sp_shoot_temp_min["s(diameter)"]) + 
+        s(interharvest_id, bs = "re", sp = sp_shoot_temp_min["s(interharvest_id)"]) + 
+        s(plant, bs = "re", sp = sp_shoot_temp_min["s(plant)"]), 
+      data = shootdf,
+      family = scat, #because residuals are very leptokurtic w/ gaussian
+      gamma = 1.2,
+      method = "REML")
+
+h2_shoot_temp_min <- anova.gam(m_shoot_temp_min_null, m_shoot_temp_min, test = "Chisq")
+h2_shoot_temp_min
+#larger residual DF means smaller estimated degrees of freedom
+```
+
+## H3: Is there an effect of a specific lag time?
+
+```{r}
+m_shoot_temp_min3 <- 
+  gam(growth ~ 
+        pick_temp_min +
+        s(day_post, bs = "cr", sp = sp_shoot_temp_min["s(day_post)"]) + 
+        s(diameter, k = 15, bs = "cr", sp = sp_shoot_temp_min["s(diameter)"]) + 
+        s(interharvest_id, bs = "re", sp = sp_shoot_temp_min["s(interharvest_id)"]) + 
+        s(plant, bs = "re", sp = sp_shoot_temp_min["s(plant)"]), 
+      data = shootdf,
+      family = scat, #because residuals are very leptokurtic w/ gaussian
+      gamma = 1.2,
+      method = "REML")
+h3_shoot_temp_min <- anova.gam(m_shoot_temp_min_null, m_shoot_temp_min3, test = "Chisq")
+h3_shoot_temp_min
+```
+# Maximum temperature
+
+## Inspect the GAM
+
+```{r}
+gam.check(m_shoot_temp_max)
+```
+basis dimensions seem fine despite low p-value for k-index.
+
+## Marginal hypothesis test
+
+```{r}
+anova(m_shoot_temp_max)
+```
+
+Significant effects of lagged temperature, days post harvest, stem diameter, and plant ID.
+
+## H1: Is smooth necessary?
+
+```{r}
+sp_shoot_temp_max <- m_shoot_temp_max$sp
+
+m_shoot_temp_max1 <- 
+  gam(growth ~ 
+        mean_temp_max +
+        s(day_post, bs = "cr", sp = sp_shoot_temp_max["s(day_post)"]) + 
+        s(diameter, k = 15, bs = "cr", sp = sp_shoot_temp_max["s(diameter)"]) + 
+        s(interharvest_id, bs = "re", sp = sp_shoot_temp_max["s(interharvest_id)"]) + 
+        s(plant, bs = "re", sp = sp_shoot_temp_max["s(plant)"]), 
+      data = shootdf,
+      family = scat, #because residuals are very leptokurtic w/ gaussian
+      gamma = 1.2,
+      method = "REML")
+h1_shoot_temp_max <- anova.gam(m_shoot_temp_max1, m_shoot_temp_max,  test = "Chisq")
+h1_shoot_temp_max
+```
+
+## H2: Is there an effect of crossbasis function?
+
+```{r}
+m_shoot_temp_max_null <- 
+  gam(growth ~ 
+        s(day_post, bs = "cr", sp = sp_shoot_temp_max["s(day_post)"]) + 
+        s(diameter, k = 15, bs = "cr", sp = sp_shoot_temp_max["s(diameter)"]) + 
+        s(interharvest_id, bs = "re", sp = sp_shoot_temp_max["s(interharvest_id)"]) + 
+        s(plant, bs = "re", sp = sp_shoot_temp_max["s(plant)"]), 
+      data = shootdf,
+      family = scat, #because residuals are very leptokurtic w/ gaussian
+      gamma = 1.2,
+      method = "REML")
+
+h2_shoot_temp_max <- anova.gam(m_shoot_temp_max_null, m_shoot_temp_max, test = "Chisq")
+h2_shoot_temp_max
+#larger residual DF means smaller estimated degrees of freedom
+```
+
+## H3: Is there an effect of a specific lag time?
+
+```{r}
+m_shoot_temp_max3 <- 
+  gam(growth ~ 
+        pick_temp_max +
+        s(day_post, bs = "cr", sp = sp_shoot_temp_max["s(day_post)"]) + 
+        s(diameter, k = 15, bs = "cr", sp = sp_shoot_temp_max["s(diameter)"]) + 
+        s(interharvest_id, bs = "re", sp = sp_shoot_temp_max["s(interharvest_id)"]) + 
+        s(plant, bs = "re", sp = sp_shoot_temp_max["s(plant)"]), 
+      data = shootdf,
+      family = scat, #because residuals are very leptokurtic w/ gaussian
+      gamma = 1.2,
+      method = "REML")
+h3_shoot_temp_max <- anova.gam(m_shoot_temp_max_null, m_shoot_temp_max3, test = "Chisq")
+h3_shoot_temp_max
+```
+# Precipitation model
+
+## Inspect the GAM
+
+```{r}
+gam.check(m_shoot_precip)
+```
+basis dimensions seem fine despite low p-value for k-index.
+
+## Marginal hypothesis test
+
+```{r}
+anova(m_shoot_precip)
+```
+
+Interstingly, here the days post harvest term is not significant.
+
+## H1: Is smooth necessary?
+
+```{r}
+sp_shoot_precip <- m_shoot_precip$sp
+
+m_shoot_precip1 <- 
+  gam(growth ~ 
+        mean_precip +
+        s(day_post, bs = "cr", sp = sp_shoot_precip["s(day_post)"]) + 
+        s(diameter, k = 15, bs = "cr", sp = sp_shoot_precip["s(diameter)"]) + 
+        s(interharvest_id, bs = "re", sp = sp_shoot_precip["s(interharvest_id)"]) + 
+        s(plant, bs = "re", sp = sp_shoot_precip["s(plant)"]), 
+      data = shootdf,
+      family = scat, #because residuals are very leptokurtic w/ gaussian
+      gamma = 1.2,
+      method = "REML")
+h1_shoot_precip <- anova.gam(m_shoot_precip1, m_shoot_precip,  test = "Chisq")
+h1_shoot_precip
+```
+
+## H2: Is there an effect of crossbasis function?
+
+```{r}
+m_shoot_precip_null <- 
+  gam(growth ~ 
+        s(day_post, bs = "cr", sp = sp_shoot_precip["s(day_post)"]) + 
+        s(diameter, k = 15, bs = "cr", sp = sp_shoot_precip["s(diameter)"]) + 
+        s(interharvest_id, bs = "re", sp = sp_shoot_precip["s(interharvest_id)"]) + 
+        s(plant, bs = "re", sp = sp_shoot_precip["s(plant)"]), 
+      data = shootdf,
+      family = scat, #because residuals are very leptokurtic w/ gaussian
+      gamma = 1.2,
+      method = "REML")
+
+h2_shoot_precip <- anova.gam(m_shoot_precip_null, m_shoot_precip, test = "Chisq")
+h2_shoot_precip
+#larger residual DF means smaller estimated degrees of freedom
+```
+
+## H3: Is there an effect of a specific lag time?
+
+```{r}
+m_shoot_precip3 <- 
+  gam(growth ~ 
+        pick_precip +
+        s(day_post, bs = "cr", sp = sp_shoot_precip["s(day_post)"]) + 
+        s(diameter, k = 15, bs = "cr", sp = sp_shoot_precip["s(diameter)"]) + 
+        s(interharvest_id, bs = "re", sp = sp_shoot_precip["s(interharvest_id)"]) + 
+        s(plant, bs = "re", sp = sp_shoot_precip["s(plant)"]), 
+      data = shootdf,
+      family = scat, #because residuals are very leptokurtic w/ gaussian
+      gamma = 1.2,
+      method = "REML")
+h3_shoot_precip <- anova.gam(m_shoot_precip_null, m_shoot_precip3, test = "Chisq")
+h3_shoot_precip
+```
+
+# Table
+
+Collect model statistics:
+
+```{r}
+full_models <- list(m_shoot_temp_min,
+                    m_shoot_temp_mean,
+                    m_shoot_temp_max,
+                    m_shoot_precip)
+h1 <- list(h1_shoot_temp_min,
+           h1_shoot_temp_mean,
+           h1_shoot_temp_max,
+           h1_shoot_precip)
+
+h2 <- list(h2_shoot_temp_min,
+           h2_shoot_temp_mean,
+           h2_shoot_temp_max,
+           h2_shoot_precip)
+
+h3 <- list(h3_shoot_temp_min,
+           h3_shoot_temp_mean,
+           h3_shoot_temp_max,
+           h3_shoot_precip)
+
+df <- 
+  tibble(weather_var = c("Minimum daily temperature",
+                         "Mean daily temperature",
+                         "Maximum daily temperature",
+                         "Total daily precipitation"),
+         r2 = map_dbl(full_models, ~summary(.x)$r.sq),
+         aic = map_dbl(full_models, AIC),
+         h1_df = map_dbl(h1, ~pull(.x, "Df")[2]),
+         h1_x2 = map_dbl(h1, ~pull(.x, "Deviance")[2]),
+         h1_p = map_dbl(h1, ~pull(.x, "Pr(>Chi)")[2]),
+         h2_df = map_dbl(h2, ~pull(.x, "Df")[2]),
+         h2_x2 = map_dbl(h2, ~pull(.x, "Deviance")[2]),
+         h2_p = map_dbl(h2, ~pull(.x, "Pr(>Chi)")[2]),
+         h3_df = map_dbl(h3, ~pull(.x, "Df")[2]),
+         h3_x2 = map_dbl(h3, ~pull(.x, "Deviance")[2]),
+         h3_p = map_dbl(h3, ~pull(.x, "Pr(>Chi)")[2]),
+  ) 
+
+df
+
+```
+
+
+```{r}
+library(gt)
+library(gtsummary)
+# gt(df)
+```
+
+Yeah, seems like I can copy-paste into Word just fine.
+
+```{r}
+table2 <- 
+  gt(df, rowname_col = "weather_var") %>% 
+  tab_spanner(
+    label = "DLNM",
+    columns = vars(r2, aic)
+  ) %>% 
+  tab_spanner(
+    label = md("H1"),
+    columns = starts_with("h1_")
+  ) %>% 
+  tab_spanner(
+    label = "H2",
+    columns = starts_with("h2")
+  ) %>% 
+  tab_spanner(
+    label = "H3 (mean of lags 1–4)",
+    columns = starts_with("h3")
+  )
+
+table2 %>% 
+  fmt(
+    columns = ends_with("_p"),
+    fns = gtsummary::style_pvalue
+  ) %>% 
+  fmt_number(
+    columns = vars(r2, h1_df, h1_x2, h2_df, h2_x2, h3_df, h3_x2),
+    decimals = 2
+  ) %>% 
+  fmt(
+    columns = vars(aic),
+    fns = round
+  ) %>% 
+  cols_label(
+    r2 = html("R<sup>2</sup>"),
+    aic = "AIC",
+    h1_df = "df",
+    h2_df = "df",
+    h3_df = "df",
+    # h1_x2 = md("$\\Chi^2$") #markdown not working?
+    h1_x2 = html("X<sup>2</sup>"),
+    h2_x2 = html("X<sup>2</sup>"),
+    h3_x2 = html("X<sup>2</sup>"),
+    h1_p = "P",
+    h2_p = "P",
+    h3_p = "P"
+  )
+```
