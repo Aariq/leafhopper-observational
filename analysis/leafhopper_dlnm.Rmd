@@ -1,9 +1,11 @@
 ---
 title: "Leafhopper distributed lag model"
 author: "Eric R. Scott"
-date: "2020-01-25"
-output: 
-  html_notebook: 
+date: '2020-01-25'
+output:
+  word_document:
+    toc: yes
+  html_notebook:
     highlight: kate
     theme: yeti
     toc: yes
@@ -572,10 +574,10 @@ h3 <- list(h3_hopper_temp_min,
            h3_hopper_precip)
 
 df <- 
-  tibble(weather_var = c("Minimum daily temperature",
-                         "Mean daily temperature",
-                         "Maximum daily temperature",
-                         "Total daily precipitation"),
+  tibble(weather_var = c("Minimum daily temp.",
+                         "Mean daily temp.",
+                         "Maximum daily temp.",
+                         "Total daily precip."),
          r2 = map_dbl(full_models, ~summary(.x)$r.sq),
          aic = map_dbl(full_models, AIC),
          h1_df = map_dbl(h1, ~pull(.x, "Df")[2]),
@@ -593,64 +595,43 @@ df
 
 ```
 
-Does `gt` produce tables that work in Word?
 
 ```{r}
-library(gt)
-library(gtsummary)
-# gt(df)
+library(flextable)
+get_flextable_defaults()
+set_flextable_defaults(font.family = "Times New Roman",
+                       font.size = 9)
 ```
 
-Yeah, seems like I can copy-paste into Word just fine.
 
 ```{r}
-table1 <- 
-  gt(df, rowname_col = "weather_var") %>% 
-  tab_spanner(
-    label = "DLNM",
-    columns = vars(r2, aic)
-  ) %>% 
-  tab_spanner(
-    label = md("H1"),
-    columns = starts_with("h1_")
-  ) %>% 
-  tab_spanner(
-    label = "H2",
-    columns = starts_with("h2")
-  ) %>% 
-  tab_spanner(
-    label = "H3 (mean of lags 9–12)",
-    columns = starts_with("h3")
-  )
-  
-
-table1 %>% 
-  fmt(
-    columns = ends_with("_p"),
-    fns = gtsummary::style_pvalue
-  ) %>% 
-  fmt_number(
-    columns = vars(r2, h1_df, h1_x2, h2_df, h2_x2, h3_df, h3_x2),
-    decimals = 2
-  ) %>% 
-  fmt(
-    columns = vars(aic),
-    fns = round
-  ) %>% 
-  cols_label(
-    r2 = html("R<sup>2</sup>"),
+df %>% 
+  mutate(across(ends_with("_p"), ~gtsummary::style_pvalue(.x))) %>% 
+  flextable(col_keys = c("weather_var", "r2", "aic", "sep_1", "h1_df", "h1_x2", "h1_p", "sep_2", "h2_df", "h2_x2", "h2_p", "sep_3", "h3_df", "h3_x2", "h3_p")) %>% 
+  colformat_num(j = 3, big.mark = "") %>% 
+  colformat_num(j = c(4, 7, 10), digits = 3) %>% 
+  colformat_num(j = c(5, 8, 11), digits = 4) %>% 
+  add_header_row(c("", "DLNM", "", "H1", "", "H2", "", "H3"), colwidths = c(1, 2, 1, 3, 1, 3, 1, 3), top = TRUE) %>% 
+  set_header_labels(
+    weather_var = "",
+    r2 = "R^2^",
     aic = "AIC",
     h1_df = "df",
-    h2_df = "df",
-    h3_df = "df",
-    # h1_x2 = md("$\\Chi^2$") #markdown not working?
-    h1_x2 = html("X<sup>2</sup>"),
-    h2_x2 = html("X<sup>2</sup>"),
-    h3_x2 = html("X<sup>2</sup>"),
+    h1_x2 = "X^2^",
     h1_p = "P",
+    h2_df = "df",
+    h2_x2 = "X^2^",
     h2_p = "P",
+    h3_df = "df",
+    h3_x2 = "X^2^",
     h3_p = "P"
-  )
+  ) %>% 
+  merge_v(part = "header") %>% 
+  autofit() %>%
+  theme_booktabs() %>% 
+  align(align = "center", part =  "header") %>% 
+  align(i = 2, align = "right", part = "header") %>% 
+  align(align = "right", part = "body")
 ```
 
 # Exploration of how edf works
