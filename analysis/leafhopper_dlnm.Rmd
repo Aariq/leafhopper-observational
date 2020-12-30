@@ -210,12 +210,13 @@ gam.check(m_hopper_temp_mean)
 
 Not overdispersed, appropriate numbers of knots used, residuals meet assumptions (mostly).
 
-## Marginal Hypothesis test
+## Model Summary
 
 P-values for covariates. P-values for crossbasis obtained through specific LRT below.
 
 ```{r}
-anova.gam(m_hopper_temp_mean) #not equivalent to car::Anova(), but more like drop1(). i.e. type III ANOVA
+summary(m_hopper_temp_mean)
+# Same as anova.gam(), but not equivalent to car::Anova(). Does something more like like drop1(). i.e. type III ANOVA
 ```
 
 ## H1: Is smooth necessary?
@@ -301,12 +302,12 @@ gam.check(m_hopper_temp_min)
 sum(residuals(m_hopper_temp_min, type = "pearson")^2) / df.residual(m_hopper_temp_min)
 ```
 
-## Marginal Hypothesis test
+## Model summary
 
 P-values for covariates. P-values for crossbasis obtained through specific LRT below.
 
 ```{r}
-anova.gam(m_hopper_temp_min)
+summary(m_hopper_temp_min)
 ```
 
 ## H1: Is smooth necessary?
@@ -388,12 +389,12 @@ gam.check(m_hopper_temp_max)
 sum(residuals(m_hopper_temp_max, type = "pearson")^2) / df.residual(m_hopper_temp_max)
 ```
 
-## Marginal Hypothesis test
+## Model Summary
 
 P-values for covariates. P-values for crossbasis obtained through specific LRT below.
 
 ```{r}
-anova.gam(m_hopper_temp_max)
+summary(m_hopper_temp_max)
 ```
 
 ## H1: Is smooth necessary?
@@ -474,10 +475,10 @@ gam.check(m_hopper_precip)
 sum(residuals(m_hopper_precip, type = "pearson")^2) / df.residual(m_hopper_precip)
 ```
 
-## Marginal hypothesis test
+## Model summary
 
 ```{r}
-anova.gam(m_hopper_precip)
+summary(m_hopper_precip)
 ```
 
 Marginally significant effect of day

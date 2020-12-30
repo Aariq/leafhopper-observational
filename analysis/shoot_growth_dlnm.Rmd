@@ -176,10 +176,10 @@ gam.check(m_shoot_temp_mean)
 ```
 basis dimensions seem fine despite low p-value for k-index.
 
-## Marginal hypothesis test
+## Model summary
 
 ```{r}
-anova(m_shoot_temp_mean)
+summary(m_shoot_temp_mean)
 ```
 
 Significant effects of lagged temperature, days post harvest, stem diameter, and plant ID.
@@ -249,10 +249,10 @@ h3_shoot_temp_mean
 gam.check(m_shoot_temp_min)
 ```
 
-## Marginal Hypothesis test
+## Model summary
 
 ```{r}
-anova(m_shoot_temp_min)
+summary(m_shoot_temp_min)
 ```
 
 ## H1: Is smooth necessary?
@@ -320,10 +320,10 @@ gam.check(m_shoot_temp_max)
 ```
 basis dimensions seem fine despite low p-value for k-index.
 
-## Marginal hypothesis test
+## Model summary
 
 ```{r}
-anova(m_shoot_temp_max)
+summary(m_shoot_temp_max)
 ```
 
 Significant effects of lagged temperature, days post harvest, stem diameter, and plant ID.
@@ -393,10 +393,10 @@ gam.check(m_shoot_precip)
 ```
 basis dimensions seem fine despite low p-value for k-index.
 
-## Marginal hypothesis test
+## Model summary
 
 ```{r}
-anova(m_shoot_precip)
+summary(m_shoot_precip)
 ```
 
 Interstingly, here the days post harvest term is not significant.
