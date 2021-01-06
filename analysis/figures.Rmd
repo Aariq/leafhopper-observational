@@ -222,7 +222,7 @@ hopper_cb <-
   theme(text = element_text(size = 10))
 hopper_cb
 ggsave(here("figs", "hopper_crossbasis.png"), hopper_cb, width = 165, height = 120, units = "mm")
-ggsave(here("figs", "figure 2.eps"), hopper_cb, width = 165, height = 120, units = "mm")
+ggsave(here("figs", "figure 2.tiff"), hopper_cb, width = 165, height = 120, units = "mm")
 ```
 
 Try adding a rug for weather data
@@ -485,7 +485,7 @@ shoot_cb <-
 ```{r}
 shoot_cb
 ggsave(here("figs", "shoot_crossbasis.png"), shoot_cb, width = 165, height = 120, units = "mm")
-ggsave(here("figs", "figure 3.eps"), shoot_cb, width = 165, height = 120, units = "mm")
+ggsave(here("figs", "figure 3.tiff"), shoot_cb, width = 165, height = 120, units = "mm")
 ```
 
 Try adding a rug for weather data
@@ -522,3 +522,13 @@ shoot_cb_rug <-
 shoot_cb_rug
 ggsave(here("figs", "shoot_crossbasis_rug.png"), shoot_cb_rug, width = 165, height = 120, units = "mm")
 ```
+
+# For Graphical Abstract
+
+Combine mean temp plots for leafhoppers and shoot growth
+
+```{r}
+hopper_temp_raster / shoot_temp_raster
+ggsave(here("figs", "graphical abstract.tiff"), width = 100, height = 120, units = "mm")
+```
+
