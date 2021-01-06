@@ -39,6 +39,7 @@ hobo <- read_rds(here("data", "cleaned", "daily-temps-hobo.rds"))
 rain_gauge <- read_rds(here("data", "cleaned", "rain-gauge.rds"))
 
 caas_weather <- read_rds(here("data", "cleaned", "daily-weather-caas.rds"))
+
 county_weather <- 
   read_excel(here("data", "Shaxian climate data in 2016-2017.xlsx"), skip = 1,
              col_types = c("date", "numeric", "numeric", "numeric", "numeric", "numeric", "numeric")) %>%
@@ -94,7 +95,7 @@ I think the units for one of these sources must be wrong.  I'm confused.
 ```{r}
 ggplot(weather_full, aes(x = date)) +
   geom_line(aes(y = precip_caas_mm), color = "blue") +
-  geom_line(aes(y = precip_mm/100), color = "purple") +#rain gauge must be in cm, not mm...
+  geom_line(aes(y = precip_mm/10), color = "purple") +#spreadsheet says units of 0.1mm
   geom_line(data = county_weather, aes(x = date, y = precip), color = "darkgreen")
 ```
 
@@ -126,7 +127,7 @@ county_weather %>% filter(date %within% interval(ymd("2017-06-27"), ymd("2017-06
 ```
 
 
-06-27 and 06-28 have NAs for precip.  It's unclear from the raw data sheet if the precip measurments were 0's or not recorded for this date.  According to the county level data, it did rain, so I'll swap those data in.
+06-27 and 06-28 have NAs for precip.  It's unclear from the raw data sheet if the precip measurments were 0's or not recorded for this date.  According to the county level data, it did rain, so I'll swap those data in. (data are in units of 0.1mm, so 7.5 = 0.75mm).
 
 ```{r}
 weather <- weather %>% 
@@ -134,26 +135,31 @@ weather <- weather %>%
   mutate(precip = ifelse(date == ymd("2017-06-28"), 0.5, precip))
 ```
 
-### Remove other NAs
-
-I'll remove the temperature NAs for 05-24 and 05-25.
+For the two missing days of temperature data, I'll use imputed values (see appendix).
 
 ```{r}
-weather <- weather %>% filter(!is.na(temp_mean))
+caas_imp <- read_rds(here("data", "cleaned", "daily-weather-caas-imputed.rds"))
+weather <- 
+  left_join(weather, caas_imp) %>% 
+  mutate(temp_mean = ifelse(is.na(temp_mean), temp_mean_caas, temp_mean),
+         temp_min = ifelse(is.na(temp_min), temp_min_caas, temp_min),
+         temp_max = ifelse(is.na(temp_max), temp_max_caas, temp_max)) %>% 
+  select(-contains("_caas"))
 ```
 
 
 # Create lagged variables
 
 ```{r paged.print=FALSE}
+nlags = 15
 weather_lags <- 
   as_tsibble(weather, index = date) %>% 
   tsibble::fill_gaps() %>% 
-  mutate(Q_precip = Lag(precip, 1:15),
-         Q_temp_mean = Lag(temp_mean, 1:15),
-         Q_temp_min = Lag(temp_min, 1:15),
-         Q_temp_max = Lag(temp_max, 1:15)) %>% 
-  mutate(L = matrix(1:15, byrow=TRUE, ncol = 15, nrow = n()))
+  mutate(Q_precip = Lag(precip, 1:nlags),
+         Q_temp_mean = Lag(temp_mean, 1:nlags),
+         Q_temp_min = Lag(temp_min, 1:nlags),
+         Q_temp_max = Lag(temp_max, 1:nlags)) %>% 
+  mutate(L = matrix(1:nlags, byrow=TRUE, ncol = nlags, nrow = n()))
 ```
 
 

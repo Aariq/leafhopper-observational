@@ -12,3 +12,5 @@ data/weather data original.zip
 data/weather data original/
 *.eps
 *.tiff
+analysis/models/*.rds
+notes/

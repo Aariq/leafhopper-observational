@@ -1,0 +1,118 @@
+---
+title: "Imputation of missing temperature values"
+author: "Eric R. Scott"
+date: "2020-12-21"
+output: 
+  html_notebook: 
+    highlight: kate
+    theme: yeti
+    toc: yes
+    toc_float: yes
+    number_sections: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(here)
+library(conflicted)
+library(lubridate)
+library(Amelia)
+
+conflict_prefer("lag", "dplyr")
+conflict_prefer("filter", "dplyr")
+```
+
+*Last compiled: `r Sys.Date()`*
+
+# Purpose
+
+What is the goal of this notebook?
+
+# Load Data
+
+```{r data, echo=TRUE}
+caas <- read_rds(here("data", "cleaned", "hourly-weather-caas.rds"))
+```
+
+```{r}
+caas %>% 
+  filter(date <= ymd("2017-07-24")) %>% 
+  filter(is.na(Temperature)) %>% 
+  pull(date)
+```
+
+
+# Impute missing values
+Only need to impute missing values in the CAAS weather station data (`Temperature`).
+
+```{r}
+missmap(caas)
+```
+
+Prep data by creating a datetime column to use as a timeseries variable
+
+```{r}
+caas_hourly <- 
+  caas %>% 
+  mutate(datetime = make_datetime(year = year(date), month = month(date), day = day(date), hour = Hour)) %>% 
+  select(datetime, Temperature, Precipitation_mm)
+```
+
+
+```{r}
+hist(log(caas_hourly$Precipitation_mm))
+imps <- 
+  caas_hourly %>% 
+  as.data.frame() %>% 
+  amelia(m = 5,
+         p2s = 0,
+         logs = "Precipitation_mm",
+         ts = "datetime",
+         lags = c("Temperature", "Precipitation_mm"),
+         leads = c("Temperature", "Precipitation_mm"))
+imps
+plot(imps, overimpute = TRUE)
+```
+
+# Average imputations
+
+```{r}
+caas_imp <- 
+  imps$imputations %>% 
+  map(as.data.frame) %>% 
+  bind_rows(.id = "imp") %>% 
+  group_by(datetime) %>% 
+  summarize(across(where(is.numeric), mean))
+```
+
+# Compare imputed and non-imputed hourly data
+
+```{r}
+caas_imp %>% 
+  ggplot(aes(x = datetime, y = Temperature)) + geom_line() + labs(title = "Imputed")
+
+caas_hourly %>% 
+  ggplot(aes(x = datetime, y = Temperature)) + geom_line() + labs(title= "original")
+```
+
+# Aggregate daily
+
+```{r}
+caas_daily_imp <-
+  caas_imp %>% 
+  mutate(date = as.Date(datetime)) %>% 
+  group_by(date) %>% 
+  summarize(temp_mean_caas = mean(Temperature),
+            temp_min_caas = min(Temperature),
+            temp_max_caas = max(Temperature),
+            precip_caas_mm = sum(Precipitation_mm))
+```
+
+# Write
+
+```{r}
+write_rds(caas_daily_imp, here("data", "cleaned", "daily-weather-caas-imputed.rds"))
+```
+
+

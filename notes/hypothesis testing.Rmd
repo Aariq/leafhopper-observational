@@ -1,0 +1,190 @@
+---
+title: "Hypothesis testing strategy for DLNMs"
+output: html_notebook
+bibliography: references.bib
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, paged.print = FALSE)
+options(scipen = 4)
+```
+
+*Last compiled: `r Sys.Date()`*
+
+```{r packages, message=FALSE, warning=FALSE, include=FALSE}
+library(tidyverse)
+library(here)
+library(conflicted)
+library(mgcv)
+library(dlnm)
+library(performance)
+library(bbmle)
+
+
+conflict_prefer("filter", "dplyr")
+conflict_prefer("here", "here")
+conflict_prefer("lag", "dplyr")
+conflict_prefer("select", "dplyr")
+
+source(here("R", "crossbasis.r"))
+```
+
+```{r include=FALSE}
+hoppers <- read_rds(here("data", "cleaned", "hopper-weather.rds"))
+```
+
+```{r include=FALSE}
+m_hopper_temp_max <- 
+  gam(hoppers ~
+        s(Q_temp_max, L,
+          bs = "cb",
+          k = c(10, 14),
+          xt = list(bs = "cr")
+        ) +
+        s(day_post, bs = "cr") +
+        s(counter, bs = "re") + #no difference with random vs. fixed
+        # counter +
+        s(interharvest_id, bs = "re") +
+        s(plant, bs = "re"),
+      family = poisson(),
+      offset = log(n_leaves),
+      data = hoppers2,
+      gamma = 1.2,
+      method = "REML")
+```
+
+# Question
+
+I've thought about a way to do hypothesis testing for the manuscript that appeases both reviewers and me, but I'm not sure how it is best to include. It's 3 tests x 4 variables (precip, min temp, mean temp, max temp). I'm thinking it might be appropriate to include as a table, but would love to hear your thoughts.
+
+# Background
+
+Functional linear models (FLMs) are linear models (regressions) that include a continuous function as a covariate. For example, rather than including temperature as a covariate, a FLM might include a function of temperature over time as a covariate. Distributed lag non-linear models (DLNMs) are FLMs that model non-linear and potentially lagged effects as two-dimensional smooth functions. This allows for modeling of non-linear effects of the variable of interest as well as a non-linear effect through time. This 2-dimensional smooth is referred to as a "crossbasis" by Gasparrini et al.
+
+I'm implementing DLNMs using a generalized additive model (GAM) framework. Basically the GAM figures out the appropriate smoothing penalties for the crossbasis. One problem with this is that p-values are known to be too low for penalized smooths in GAMs. On a related note, reviewer 2 notes:
+
+> One thing that might help would be to contrast this statistical approach [DLNM] with another, I think more common, approach to inferring the importance of different time lags, which is to consider only one lag at a time and use model selection methods to determine which lags produce the model that minimizes the AIC or explains the most variance.
+
+So as a sanity check on the p-values obtained from DLNMs, and to address the reviewer's concerns, I propose testing three explicit hypotheses with the DLNMs inspired by Swihart et al. [-@swihartRestrictedLikelihoodRatio2014].
+
+# Hypotheses to test
+
+1.  Is *smooth* function necessary?
+
+    -   H~A~: Full model including crossbasis smooth for weather variable over 15 days lag.
+    -   H~0~: replace crossbasis term with mean of temperature in past 15 days
+
+2.  Is there an effect of temperature?
+
+    -   H~A~: Same as H~A~ from \#1 above
+    -   H~0~: Remove the weather variable term entirely
+
+3.  Is there a single lagged effect?
+
+    -   H~A~: Use the weather variable at a lag with maximum effect suggested by the DLNM (e.g. mean temperature 10 days ago) as a parameteric (not smoothed) term.
+    -   H~0~: Same as H~0~ from \#2 above
+
+I'll now go through an example with the effects of mean temperature on leafhopper densities. Terms in the full model include:
+
+-   `s(Q_temp_mean, L, bs = "cb")` - This is the crossbasis smooth of mean daily temperature over the past 15 days
+
+-   `s(day_post, bs = "cr")` - A potentially non-linear effect of days post harvest
+
+-   `s(counter, bs = "re")` - A random effect of who did the data collection (three observers)
+
+-   `s(interharvest_id, bs = "re")` - A random effect of harvest (date range x field ID).
+
+-   `s(plant, bs = "re")` - A random effect of plant ID (to account for repeated measures).
+
+## Is the crossbasis smooth necessary?
+
+```{r echo=FALSE}
+#calculate mean of past 15 days
+hoppers2 <-
+  hoppers %>%
+  rowwise() %>% 
+  mutate(mean_temp_mean = mean(Q_temp_mean))
+
+m <- 
+  gam(hoppers ~
+        s(Q_temp_mean, L,
+          bs = "cb",
+          k = c(10, 14),
+          xt = list(bs = "cr")
+        ) +
+        s(day_post, bs = "cr") +
+        s(counter, bs = "re") + #no difference with random vs. fixed
+        # counter +
+        s(interharvest_id, bs = "re") +
+        s(plant, bs = "re"),
+      family = poisson(),
+      offset = log(n_leaves),
+      data = hoppers2,
+      gamma = 1.2,
+      method = "REML")
+m1 <- 
+  gam(hoppers ~
+        mean_temp_mean +
+        s(day_post, bs = "cr") +
+        s(counter, bs = "re") + #no difference with random vs. fixed
+        # counter +
+        s(interharvest_id, bs = "re") +
+        s(plant, bs = "re"),
+      family = poisson(),
+      offset = log(n_leaves),
+      data = hoppers2,
+      gamma = 1.2,
+      method = "REML")
+test1 <- anova.gam(m, m1, test = "Chisq")
+test1
+```
+
+Including a crossbasis smooth significantly improves the model over simply averaging temperatures over the previous 15 days from an observation (p = `r test1[["Pr(>Chi)"]][2]`)
+
+## Is there an effect of weather term?
+
+```{r}
+m2 <- 
+  gam(hoppers ~
+        s(day_post, bs = "cr") +
+        s(counter, bs = "re") + #no difference with random vs. fixed
+        # counter +
+        s(interharvest_id, bs = "re") +
+        s(plant, bs = "re"),
+      family = poisson(),
+      offset = `(offset)`, #this is how the offset shows up in model.frame(m)
+      data = model.frame(m), #to ensure its the same data
+      gamma = 1.2,
+      method = "REML")
+test2 <- anova.gam(m, m2, test = "Chisq") 
+test2
+```
+
+Mean daily temperature over the previous 15 days has a significant effect on leafhopper abundance (p = `r test2[["Pr(>Chi)"]][2]`).
+
+## Effect of specific lag
+
+According to the crossbasis plot (not shown here), the mean daily temperature 10 days ago had the strongest effect on leafhopper density.
+
+```{r}
+m3 <- 
+  gam(hoppers ~
+        Q_temp_mean[, 10] +
+        s(day_post, bs = "cr") +
+        s(counter, bs = "re") + #no difference with random vs. fixed
+        # counter +
+        s(interharvest_id, bs = "re") +
+        s(plant, bs = "re"),
+      family = poisson(),
+      offset = `(offset)`, #this is how the offset shows up in model.frame(m)
+      data = model.frame(m), #to ensure its the same data
+      gamma = 1.2,
+      method = "REML")
+
+test3 <- anova.gam(m3, m2, test = "Chisq")
+test3
+```
+
+The mean daily temperature 10 days ago alone did not have a significant effect on leafhopper density (p = `r test3[["Pr(>Chi)"]][2]`). Because the other two tests are significant, this supports a cumulative effect of temperature (i.e. the "distributed" in DLNM) rather than an effect of a specific point in time prior to the observed leafhopper density.
+
+# References

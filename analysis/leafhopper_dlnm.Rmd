@@ -1,9 +1,11 @@
 ---
 title: "Leafhopper distributed lag model"
 author: "Eric R. Scott"
-date: "2020-01-25"
-output: 
-  html_notebook: 
+date: '2020-01-25'
+output:
+  word_document:
+    toc: yes
+  html_notebook:
     highlight: kate
     theme: yeti
     toc: yes
@@ -16,6 +18,12 @@ knitr::opts_chunk$set(echo = TRUE, paged.print = FALSE)
 options(scipen = 4)
 ```
 
+# TODO
+
+-   for these new hypotheses tests to work, I need to fix the penalization for the covariates at whatever they are in the full model.
+
+-   I might be able to do this with the `sp` parameter, or possibly by setting `k` and using `fx = TRUE`
+
 *Last compiled: `r Sys.Date()`*
 
 ```{r packages, message=FALSE, warning=FALSE}
@@ -24,24 +32,38 @@ library(here)
 library(conflicted)
 library(mgcv)
 library(dlnm)
-library(colorspace)
 library(bbmle)
-library(patchwork)
 
 conflict_prefer("filter", "dplyr")
 conflict_prefer("here", "here")
 conflict_prefer("lag", "dplyr")
 conflict_prefer("select", "dplyr")
-
-source(here("R", "crossbasis.r"))
 ```
 
+# Methods
 
-# Goal
+This analysis is based on Gasparrini A, Scheipl F, Armstrong B, Kenward MG (2017) A penalized framework for distributed lag non-linear models. Biometrics 73:938--948. doi: 10.1111/biom.12645. Specifically, it is based on `ex1_01.int.R` provided in their code. This "internal" method for distributed lag models takes full(?) advantage of built in features of `gam`s.
 
-This analysis is based on Gasparrini A, Scheipl F, Armstrong B, Kenward MG (2017) A penalized framework for distributed lag non-linear models. Biometrics 73:938–948. doi: 10.1111/biom.12645.  Specifically, it is based on `ex1_01.int.R` provided in their code.  This "internal" method for distributed lag models takes full(?) advantage of built in features of `gam`s.
+The goal is to model the effects of temperature and precipitation on leafhoppers as having a non-linear, lagged effect.
 
-The goal is to model the effects of temperature and precipitation on leafhoppers as having a quadratic, lagged effect.  The lag is modeled as a penalized cubic regression spline and the effect of temperature as a 2nd order polynomial in a crossbasis smoother. In an ideal world, the penalized spline would be the shrinkage version (bs = "cs"), but that isn't available in the crossbasis smooth constructor provided by `dlnm`.
+# Hypotheses
+
+To achieve this goal, I'll test three hypotheses for each weather variable (min, mean, and max daily tempearture, and precipitation)
+
+1.  Is *smooth* function necessary?
+
+    -   H~A~: Full model including crossbasis smooth for weather variable over 15 days lag.
+    -   H~0~: replace crossbasis term with mean of temperature in past 15 days
+
+2.  Is there an effect of temperature?
+
+    -   H~A~: Same as H~A~ from \#1 above
+    -   H~0~: Remove the weather variable term entirely
+
+3.  Is there a single lagged effect?
+
+    -   H~A~: Use the weather variable at a lag with maximum effect suggested by the DLNM (e.g. mean temperature 10 days ago) as a parameteric (not smoothed) term.
+    -   H~0~: Same as H~0~ from \#2 above
 
 # Read in Data
 
@@ -52,12 +74,34 @@ head(hoppers)
 # str(hoppers)
 ```
 
+Remove any rows with missing values
 
-# Distributed Lag Model: "internal" method
+```{r}
+hoppers <-
+  hoppers %>%
+  rowwise() %>%
+  filter(!is.na(sum(Q_temp_max)))
+```
 
-## Build the GAMs
+```{r}
+#calculate mean of past 15 days
+hoppers <-
+  hoppers %>%
+  mutate(mean_temp_mean = mean(Q_temp_mean),
+         mean_temp_min = mean(Q_temp_min),
+         mean_temp_max = mean(Q_temp_max),
+         mean_precip = mean(Q_precip)) %>% 
+  #and the mean of days 9–12
+  mutate(pick_temp_mean = mean(Q_temp_mean[ , 9:12]),
+         pick_temp_min = mean(Q_temp_min[ , 9:12]),
+         pick_temp_max = mean(Q_temp_max[ , 9:12]),
+         pick_precip = mean(Q_temp_max[ , 9:12])) %>% 
+  ungroup()
+```
 
-Temp and precip are highly concurve, so can't trust p-values. I'll do the models separately.
+# Build the full models
+
+Temp and precip are highly concurve, so cannot include all weather variables as predictors in the same model.
 
 ```{r}
 m_hopper_temp_mean <- 
@@ -77,7 +121,9 @@ m_hopper_temp_mean <-
       data = hoppers,
       gamma = 1.2,
       method = "REML")
+```
 
+```{r}
 m_hopper_temp_min <- 
   gam(hoppers ~
         s(Q_temp_min, L,
@@ -95,7 +141,9 @@ m_hopper_temp_min <-
       data = hoppers,
       gamma = 1.2,
       method = "REML")
+```
 
+```{r}
 m_hopper_temp_max <- 
   gam(hoppers ~
         s(Q_temp_max, L,
@@ -113,7 +161,9 @@ m_hopper_temp_max <-
       data = hoppers,
       gamma = 1.2,
       method = "REML")
+```
 
+```{r}
 m_hopper_precip <- 
   gam(hoppers ~
         s(Q_precip, L,
@@ -134,10 +184,19 @@ m_hopper_precip <-
 ```
 
 ```{r}
-ICtab(m_hopper_temp_mean, m_hopper_temp_min, m_hopper_temp_max, m_hopper_precip)
+AICtab(m_hopper_temp_mean, m_hopper_temp_min, m_hopper_temp_max, m_hopper_precip)
 ```
 
 Minimum temperature model "wins"
+
+# Save models
+
+```{r}
+write_rds(m_hopper_precip, here("analysis", "models", "m_hopper_precip.rds"))
+write_rds(m_hopper_temp_max, here("analysis", "models", "m_hopper_temp_max.rds"))
+write_rds(m_hopper_temp_mean, here("analysis", "models", "m_hopper_temp_mean.rds"))
+write_rds(m_hopper_temp_min, here("analysis", "models", "m_hopper_temp_min.rds"))
+```
 
 # Mean Temperature
 
@@ -149,24 +208,89 @@ sum(residuals(m_hopper_temp_mean, type = "pearson")^2) / df.residual(m_hopper_te
 gam.check(m_hopper_temp_mean)
 ```
 
-not overdispersed
+Not overdispersed, appropriate numbers of knots used, residuals meet assumptions (mostly).
 
-## Significance test
+## Model Summary
 
-```{r}
-anova.gam(m_hopper_temp_mean)
-```
-
-Significant effect of plant (parametric factor), temperature, precip, days post harvest, and diameter on growth.
-
-## Plot regular smooths of covariates
+P-values for covariates. P-values for crossbasis obtained through specific LRT below.
 
 ```{r}
-plot.gam(m_hopper_temp_mean, pages = 1, residuals = FALSE, all.terms = TRUE)
-plot.gam(m_hopper_temp_min, pages = 1, residuals = FALSE, all.terms = TRUE)
-plot.gam(m_hopper_temp_max, pages = 1, residuals = FALSE, all.terms = TRUE)
-plot.gam(m_hopper_precip, pages = 1, residuals = FALSE, all.terms = TRUE)
+summary(m_hopper_temp_mean)
+# Same as anova.gam(), but not equivalent to car::Anova(). Does something more like like drop1(). i.e. type III ANOVA
 ```
+
+## H1: Is smooth necessary?
+
+```{r}
+sp_hopper_temp_mean <- m_hopper_temp_mean$sp
+
+m_hopper_temp_mean1 <- 
+  gam(hoppers ~
+        mean_temp_mean +
+        s(day_post, bs = "cr", sp = sp_hopper_temp_mean["s(day_post)"]) +
+        s(counter, bs = "re", sp = sp_hopper_temp_mean["s(counter)"]) + 
+        s(interharvest_id, bs = "re",
+          sp = sp_hopper_temp_mean["s(interharvest_id)"]) +
+        s(plant, bs = "re", sp = sp_hopper_temp_mean["s(plant)"]),
+      family = poisson(),
+      offset = log(n_leaves),
+      data = hoppers,
+      gamma = 1.2,
+      method = "REML")
+
+h1_hopper_temp_mean <- anova.gam(m_hopper_temp_mean1, m_hopper_temp_mean,  test = "Chisq")
+h1_hopper_temp_mean
+```
+
+Yes, smooth is significantly better than just a mean of the past 15 days.
+
+## H2: Is there an effect of daily mean temp?
+
+```{r}
+m_hopper_temp_mean_null <- 
+  gam(hoppers ~
+        s(day_post, bs = "cr", sp = sp_hopper_temp_mean["s(day_post)"]) +
+        s(counter, bs = "re", sp = sp_hopper_temp_mean["s(counter)"]) + 
+        s(interharvest_id, bs = "re",
+          sp = sp_hopper_temp_mean["s(interharvest_id)"]) +
+        s(plant, bs = "re", sp = sp_hopper_temp_mean["s(plant)"]),
+      family = poisson(),
+      offset = log(n_leaves),
+      data = hoppers,
+      gamma = 1.2,
+      method = "REML")
+
+h2_hopper_temp_mean <- anova.gam(m_hopper_temp_mean_null, m_hopper_temp_mean, test = "Chisq")
+h2_hopper_temp_mean
+#larger residual DF means smaller estimated degrees of freedom
+```
+
+Yes, there is a significant effect of lagged mean daily temperature on leafhoppers
+
+## H3: Is there an effect of a specific lag?
+
+According to plots, all models had a steep slope (strong effect) between 9 and 12 days of lag. I'll use the mean of those days as a predictor.
+
+```{r}
+m_hopper_temp_mean3 <- 
+  gam(hoppers ~
+       pick_temp_mean +
+        s(day_post, bs = "cr", sp = sp_hopper_temp_mean["s(day_post)"]) +
+        s(counter, bs = "re", sp = sp_hopper_temp_mean["s(counter)"]) + 
+        s(interharvest_id, bs = "re",
+          sp = sp_hopper_temp_mean["s(interharvest_id)"]) +
+        s(plant, bs = "re", sp = sp_hopper_temp_mean["s(plant)"]),
+      family = poisson(),
+      offset = log(n_leaves),
+      data = hoppers,
+      gamma = 1.2,
+      method = "REML")
+
+h3_hopper_temp_mean <- anova.gam(m_hopper_temp_mean_null, m_hopper_temp_mean3, test = "Chisq")
+h3_hopper_temp_mean
+```
+
+Significant effect of mean temp 10 days ago
 
 # Minimum temperature
 
@@ -178,15 +302,86 @@ gam.check(m_hopper_temp_min)
 sum(residuals(m_hopper_temp_min, type = "pearson")^2) / df.residual(m_hopper_temp_min)
 ```
 
-## Significance test
+## Model summary
+
+P-values for covariates. P-values for crossbasis obtained through specific LRT below.
 
 ```{r}
-anova.gam(m_hopper_temp_min)
+summary(m_hopper_temp_min)
 ```
 
-Min temp is significant
+## H1: Is smooth necessary?
+
+```{r}
+sp_hopper_temp_min <- m_hopper_temp_min$sp
+
+m_hopper_temp_min1 <- 
+  gam(hoppers ~
+        mean_temp_min +
+        s(day_post, bs = "cr", sp = sp_hopper_temp_min["s(day_post)"]) +
+        s(counter, bs = "re", sp = sp_hopper_temp_min["s(counter)"]) + 
+        s(interharvest_id, bs = "re",
+          sp = sp_hopper_temp_min["s(interharvest_id)"]) +
+        s(plant, bs = "re", sp = sp_hopper_temp_min["s(plant)"]),
+      family = poisson(),
+      offset = log(n_leaves),
+      data = hoppers,
+      gamma = 1.2,
+      method = "REML")
+
+h1_hopper_temp_min <- anova.gam(m_hopper_temp_min1, m_hopper_temp_min,  test = "Chisq")
+h1_hopper_temp_min
+```
+
+Yes, the smooth is a significant improvment over just mean minimum temperature
+
+## H2: Is there an effect of min temp?
+
+```{r}
+m_hopper_temp_min_null <- 
+  gam(hoppers ~
+        s(day_post, bs = "cr", sp = sp_hopper_temp_min["s(day_post)"]) +
+        s(counter, bs = "re", sp = sp_hopper_temp_min["s(counter)"]) + 
+        s(interharvest_id, bs = "re",
+          sp = sp_hopper_temp_min["s(interharvest_id)"]) +
+        s(plant, bs = "re", sp = sp_hopper_temp_min["s(plant)"]),
+      family = poisson(),
+      offset = log(n_leaves),
+      data = hoppers,
+      gamma = 1.2,
+      method = "REML")
+
+h2_hopper_temp_min <- anova.gam(m_hopper_temp_min_null, m_hopper_temp_min, test = "Chisq")
+h2_hopper_temp_min
+#larger residual DF means smaller estimated degrees of freedom
+```
+
+yes, highly significant effect of temperature
+
+## H3: Is there an effect of a specific lag?
+
+```{r}
+m_hopper_temp_min3 <- 
+  gam(hoppers ~
+        pick_temp_min +
+        s(day_post, bs = "cr", sp = sp_hopper_temp_min["s(day_post)"]) +
+        s(counter, bs = "re", sp = sp_hopper_temp_min["s(counter)"]) + 
+        s(interharvest_id, bs = "re",
+          sp = sp_hopper_temp_min["s(interharvest_id)"]) +
+        s(plant, bs = "re", sp = sp_hopper_temp_min["s(plant)"]),
+      family = poisson(),
+      offset = log(n_leaves),
+      data = hoppers,
+      gamma = 1.2,
+      method = "REML")
+
+h3_hopper_temp_min <- anova.gam(m_hopper_temp_min_null, m_hopper_temp_min3, test = "Chisq")
+h3_hopper_temp_min
+```
 
 # Maximum temperature
+
+## Inspect the GAM
 
 ```{r}
 gam.check(m_hopper_temp_max)
@@ -194,204 +389,321 @@ gam.check(m_hopper_temp_max)
 sum(residuals(m_hopper_temp_max, type = "pearson")^2) / df.residual(m_hopper_temp_max)
 ```
 
+## Model Summary
+
+P-values for covariates. P-values for crossbasis obtained through specific LRT below.
+
 ```{r}
-anova.gam(m_hopper_temp_max)
+summary(m_hopper_temp_max)
 ```
 
-max temp also highly significant.
+## H1: Is smooth necessary?
+
+```{r}
+sp_hopper_temp_max <- m_hopper_temp_max$sp
+m_hopper_temp_max1 <- 
+  gam(hoppers ~
+        mean_temp_max +
+        s(day_post, bs = "cr", sp = sp_hopper_temp_max["s(day_post)"]) +
+        s(counter, bs = "re", sp = sp_hopper_temp_max["s(counter)"]) +
+        s(interharvest_id, bs = "re",
+          sp = sp_hopper_temp_max["s(interharvest_id)"]) +
+        s(plant, bs = "re", sp = sp_hopper_temp_max["s(plant)"]),
+      family = poisson(),
+      offset = log(n_leaves),
+      data = hoppers,
+      gamma = 1.2,
+      method = "REML")
+
+h1_hopper_temp_max <- anova.gam(m_hopper_temp_max1, m_hopper_temp_max,  test = "Chisq")
+h1_hopper_temp_max
+```
+
+Smooth is marginally significant
+
+## H2: Is there an effect of max temp?
+
+```{r}
+m_hopper_temp_max_null <- 
+  gam(hoppers ~
+        s(day_post, bs = "cr", sp = sp_hopper_temp_max["s(day_post)"]) +
+        s(counter, bs = "re", sp = sp_hopper_temp_max["s(counter)"]) + 
+        s(interharvest_id, bs = "re",
+          sp = sp_hopper_temp_max["s(interharvest_id)"]) +
+        s(plant, bs = "re", sp = sp_hopper_temp_max["s(plant)"]),
+      family = poisson(),
+      offset = log(n_leaves),
+      data = hoppers,
+      gamma = 1.2,
+      method = "REML")
+
+h2_hopper_temp_max <- anova.gam(m_hopper_temp_max_null, m_hopper_temp_max,
+                           test = "Chisq")
+h2_hopper_temp_max
+#larger residual DF means smaller estimated degrees of freedom
+```
+
+Significant effect of crossbasis
+
+## H3: Is there an effect of a specific lag?
+
+```{r}
+m_hopper_temp_max3 <- 
+  gam(hoppers ~
+        pick_temp_max +
+        s(day_post, bs = "cr", sp = sp_hopper_temp_max["s(day_post)"]) +
+        s(counter, bs = "re", sp = sp_hopper_temp_max["s(counter)"]) + 
+        s(interharvest_id, bs = "re",
+          sp = sp_hopper_temp_max["s(interharvest_id)"]) +
+        s(plant, bs = "re", sp = sp_hopper_temp_max["s(plant)"]),
+      family = poisson(),
+      offset = log(n_leaves),
+      data = hoppers,
+      gamma = 1.2,
+      method = "REML")
+
+h3_hopper_temp_max <- anova.gam(m_hopper_temp_max_null, m_hopper_temp_max3, test = "Chisq")
+h3_hopper_temp_max
+```
 
 # Precip
 
-Inspect gam:
+## Inspect GAM
 
 ```{r}
 gam.check(m_hopper_precip)
+sum(residuals(m_hopper_precip, type = "pearson")^2) / df.residual(m_hopper_precip)
+```
+
+## Model summary
+
+```{r}
+summary(m_hopper_precip)
+```
+
+Marginally significant effect of day
+
+## H1: Is smooth necessary?
+
+```{r}
+sp_hopper_precip <- m_hopper_precip$sp
+
+m_hopper_precip1 <- 
+  gam(hoppers ~
+        mean_precip +
+        s(day_post, bs = "cr", sp = sp_hopper_precip["s(day_post)"]) +
+        s(counter, bs = "re", sp = sp_hopper_precip["s(counter)"]) +
+        s(interharvest_id, bs = "re",
+          sp = sp_hopper_precip["s(interharvest_id)"]) +
+        s(plant, bs = "re", sp = sp_hopper_precip["s(plant)"]),
+      family = poisson(),
+      offset = log(n_leaves),
+      data = hoppers,
+      gamma = 1.2,
+      method = "REML")
+
+h1_hopper_precip <- anova.gam(m_hopper_precip1, m_hopper_precip,  test = "Chisq")
+h1_hopper_precip
+```
+
+Yes, crossbasis smooth is significantly better than just mean over past 15 days.
+
+## H2: Is there an effect of max temp?
+
+```{r}
+m_hopper_precip_null <- 
+  gam(hoppers ~
+        s(day_post, bs = "cr", sp = sp_hopper_precip["s(day_post)"]) +
+        s(counter, bs = "re", sp = sp_hopper_precip["s(counter)"]) + 
+        s(interharvest_id, bs = "re",
+          sp = sp_hopper_precip["s(interharvest_id)"]) +
+        s(plant, bs = "re", sp = sp_hopper_precip["s(plant)"]),
+      family = poisson(),
+      offset = log(n_leaves),
+      data = hoppers,
+      gamma = 1.2,
+      method = "REML")
+h2_hopper_precip <- anova.gam(m_hopper_precip_null, m_hopper_precip, test = "Chisq")
+h2_hopper_precip
+#larger residual DF means smaller estimated degrees of freedom
+```
+
+Precipitation has a significant effect.
+
+## H3: Is there an effect of a specific lag?
+
+```{r}
+m_hopper_precip3 <- 
+  gam(hoppers ~
+        pick_precip +
+        s(day_post, bs = "cr", sp = sp_hopper_precip["s(day_post)"]) +
+        s(counter, bs = "re", sp = sp_hopper_precip["s(counter)"]) +
+        s(interharvest_id, bs = "re", 
+          sp = sp_hopper_precip["s(interharvest_id)"]) +
+        s(plant, bs = "re", sp = sp_hopper_precip["s(plant)"]),
+      family = poisson(),
+      offset = log(n_leaves),
+      data = hoppers,
+      gamma = 1.2,
+      method = "REML")
+
+h3_hopper_precip <- anova.gam(m_hopper_precip_null, m_hopper_precip3, test = "Chisq")
+h3_hopper_precip
+```
+
+# Table
+
+Collect model statistics:
+
+```{r}
+full_models <- list(m_hopper_temp_min,
+                    m_hopper_temp_mean,
+                    m_hopper_temp_max,
+                    m_hopper_precip)
+h1 <- list(h1_hopper_temp_min,
+           h1_hopper_temp_mean,
+           h1_hopper_temp_max,
+           h1_hopper_precip)
+
+h2 <- list(h2_hopper_temp_min,
+           h2_hopper_temp_mean,
+           h2_hopper_temp_max,
+           h2_hopper_precip)
+h3 <- list(h3_hopper_temp_min,
+           h3_hopper_temp_mean,
+           h3_hopper_temp_max,
+           h3_hopper_precip)
+
+df <- 
+  tibble(weather_var = c("Minimum daily temp.",
+                         "Mean daily temp.",
+                         "Maximum daily temp.",
+                         "Total daily precip."),
+         r2 = map_dbl(full_models, ~summary(.x)$r.sq),
+         aic = map_dbl(full_models, AIC),
+         h1_df = map_dbl(h1, ~pull(.x, "Df")[2]),
+         h1_x2 = map_dbl(h1, ~pull(.x, "Deviance")[2]),
+         h1_p = map_dbl(h1, ~pull(.x, "Pr(>Chi)")[2]),
+         h2_df = map_dbl(h2, ~pull(.x, "Df")[2]),
+         h2_x2 = map_dbl(h2, ~pull(.x, "Deviance")[2]),
+         h2_p = map_dbl(h2, ~pull(.x, "Pr(>Chi)")[2]),
+         h3_df = map_dbl(h3, ~pull(.x, "Df")[2]),
+         h3_x2 = map_dbl(h3, ~pull(.x, "Deviance")[2]),
+         h3_p = map_dbl(h3, ~pull(.x, "Pr(>Chi)")[2]),
+  ) 
+
+#calculate ∆AIC
+df <- 
+  df %>% 
+  mutate(daic = aic - min(aic), .after = aic)
+
 ```
 
 
-
 ```{r}
-anova.gam(m_hopper_precip)
+library(flextable)
+# get_flextable_defaults()
+set_flextable_defaults(font.family = "Times New Roman",
+                       font.size = 9)
 ```
 
-significant effect of precip, but not of date.
-
-### Plot regular smooths for co-variates
-
-Not significant, so these won't be in the paper
+With H1 and H2
 
 ```{r}
-plot.gam(m_hopper_precip,
-         all.terms = TRUE,
-         pages = 1,
-         shift = coef(m_hopper_precip)[1]
-         )
-```
-
-
-# Plots
-
-## Covaraiate
-
-Days post-harvest
-
-```{r}
-d <- list("Mean Temperature" = m_hopper_temp_mean,
-         "Minimum Temperature" = m_hopper_temp_min,
-         "Precipitation" = m_hopper_precip) %>%
-  map(~plot_gam(.x, main_var = day_post))
-
-dph_plot <-
-  d %>%
-  map_df(~pluck(.x,"data"), .id = "model") %>% 
-  ggplot(aes(x = value, y = fit, color = model)) +
-  geom_ribbon(aes(ymin = ll, ymax = ul), 
-              fill = "grey", linetype = 0, alpha = 0.5) +
-  geom_line(size = 1) +
-  geom_rug(data = hoppers, aes(day_post), inherit.aes = FALSE, alpha = 0.03) +
-  labs(x = "Days post harvest", y = "Leafhoppers / leaf", color = "Model") +
-  theme_bw() +
-  theme(aspect.ratio = 1)
-dph_plot
-ggsave(here("figs", "hopper_covariates.png"), dph_plot, width = 165, height = 130, units = "mm")
-```
-
-## Generate plot data
-
-`visibly` packakge can't handle these cross-basis smooths apparently.
-
-```{r}
-ht_pd <- cb_margeff(m_hopper_temp_mean, Q_temp_mean, L) 
-htmin_pd <- cb_margeff(m_hopper_temp_min, Q_temp_min, L)
-htmax_pd <- cb_margeff(m_hopper_temp_max, Q_temp_max, L)
-hp_pd <- cb_margeff(m_hopper_precip, Q_precip, L) 
+df %>% 
+  select(-starts_with("h3_"), -aic) %>% 
+  mutate(across(ends_with("_p"), ~gtsummary::style_pvalue(.x))) %>% 
+  flextable(col_keys = c("weather_var", "r2", "daic", "sep_1", "h1_df", "h1_x2", "h1_p", "sep_2", "h2_df", "h2_x2", "h2_p")) %>% 
+  colformat_num(j = 3, big.mark = "") %>% 
+  colformat_num(j = c(5, 6, 9, 10), digits = 3) %>% 
+  add_header_row(c("", "DLNM", "", "H1", "", "H2"), colwidths = c(1, 2, 1, 3, 1, 3), top = TRUE) %>% 
+  set_header_labels(
+    weather_var = "",
+    r2 = "R^2^",
+    daic = "∆AIC",
+    h1_df = "df",
+    h1_x2 = "X^2^",
+    h1_p = "P",
+    h2_df = "df",
+    h2_x2 = "X^2^",
+    h2_p = "P"
+  ) %>% 
+  merge_v(part = "header") %>% 
+  autofit() %>%
+  theme_booktabs() %>% 
+  align(align = "center", part =  "header") %>% 
+  align(i = 2, align = "right", part = "header") %>% 
+  align(align = "right", part = "body")
 ```
 
 
-common scale:
+With all 3 hypotheses
 
 ```{r}
-hopper_lim <- c(min(exp(ht_pd$fitted), 
-                    exp(htmin_pd$fitted),
-                    exp(htmax_pd$fitted), 
-                    exp(hp_pd$fitted)),
-                max(exp(ht_pd$fitted),
-                    exp(htmin_pd$fitted),
-                    exp(htmax_pd$fitted),
-                    exp(hp_pd$fitted)))
+df %>% 
+  mutate(across(ends_with("_p"), ~gtsummary::style_pvalue(.x))) %>% 
+  flextable(col_keys = c("weather_var", "r2", "daic", "sep_1", "h1_df", "h1_x2", "h1_p", "sep_2", "h2_df", "h2_x2", "h2_p", "sep_3", "h3_df", "h3_x2", "h3_p")) %>% 
+  colformat_num(j = 3, big.mark = "") %>% 
+  colformat_num(j = c(4, 7, 10), digits = 3) %>% 
+  colformat_num(j = c(5, 8, 11), digits = 4) %>% 
+  add_header_row(c("", "DLNM", "", "H1", "", "H2", "", "H3"), colwidths = c(1, 2, 1, 3, 1, 3, 1, 3), top = TRUE) %>% 
+  set_header_labels(
+    weather_var = "",
+    r2 = "R^2^",
+    daic = "∆AIC",
+    h1_df = "df",
+    h1_x2 = "X^2^",
+    h1_p = "P",
+    h2_df = "df",
+    h2_x2 = "X^2^",
+    h2_p = "P",
+    h3_df = "df",
+    h3_x2 = "X^2^",
+    h3_p = "P"
+  ) %>% 
+  merge_v(part = "header") %>% 
+  autofit() %>%
+  theme_booktabs() %>% 
+  align(align = "center", part =  "header") %>% 
+  align(i = 2, align = "right", part = "header") %>% 
+  align(align = "right", part = "body")
 ```
 
-## Mean Temperature cross-basis
+# Exploration of how edf works
+
+If I constrain the `sp` parameter, does it constrain the resulting EDF? Mostly...
 
 ```{r}
-hopper_temp_raster <-
-  ggplot(filter(ht_pd, min_dist < 0.1),
-         aes(x = x, y = lag, z = exp(fitted), fill = exp(fitted))) +
-  geom_raster(interpolate = TRUE) +
-  geom_contour(color = "grey50", size = 0.4, binwidth = 0.001) +
-  scale_fill_viridis_c("Leafhoppers\nper leaf",
-                       option = "A",
-                       limits = hopper_lim) + 
-  scale_y_continuous("Lag (days)", expand = c(0,0)) + 
-  scale_x_continuous("Daily Mean Temperature (ºC)", expand = c(0,0))
-hopper_temp_raster
-# ggsave(here("figs", "hopper_temp_raster.png"))
-```
+library(magrittr)
+m_hopper_temp_mean$edf %>%
+  enframe() %>%
+  mutate(name = str_remove(name, ".\\d+")) %>%
+  group_by(name) %>%
+  summarize(edf = sum(value)) %T>%
+  print() %>% 
+  summarize(total = sum(edf))
 
+m_hopper_temp_mean1$edf %>%
+  enframe() %>%
+  mutate(name = str_remove(name, ".\\d+")) %>%
+  group_by(name) %>%
+  summarize(edf = sum(value)) %T>%
+  print() %>% 
+  summarize(total = sum(edf))
 
-## Minimum Temperature cross-basis
+m_hopper_temp_mean_null$edf %>%
+  enframe() %>%
+  mutate(name = str_remove(name, ".\\d+")) %>%
+  group_by(name) %>%
+  summarize(edf = sum(value)) %T>%
+  print() %>% 
+  summarize(total = sum(edf))
 
-```{r}
-hopper_min_temp_raster <-
-  ggplot(filter(htmin_pd, min_dist < 0.1),
-         aes(x = x, y = lag, z = exp(fitted), fill = exp(fitted))) +
-  geom_raster(interpolate = TRUE) +
-  geom_contour(color = "grey50", size = 0.4, binwidth = 0.001) +
-  # geom_rug(alpha = 0.3) + #if I include this, it should be from the weather data and only on the x-axis I think.
-  scale_fill_viridis_c("Leafhoppers\nper leaf",
-                       option = "A", 
-                       limits = hopper_lim) + 
-  scale_y_continuous("Lag (days)", expand = c(0,0)) + 
-  scale_x_continuous("Daily Minimum Temperature (ºC)", expand = c(0,0))
-hopper_min_temp_raster
-# ggsave(here("figs", "hopper_min_temp_raster.png"))
-```
-Recent cool temperatures bad for leafhoppers (it's cold out, they're less active)
-
-## Maximum temperature cross-basis
-
-```{r}
-hopper_max_temp_raster <-
-  ggplot(filter(htmax_pd, min_dist < 0.1),
-         aes(x = x, y = lag, z = exp(fitted), fill = exp(fitted))) +
-  geom_raster(interpolate = TRUE) +
-  geom_contour(color = "grey50", size = 0.4, binwidth = 0.001) +
-  scale_fill_viridis_c("Leafhoppers\nper leaf",
-                       option = "A",
-                       limits = hopper_lim) + 
-  scale_y_continuous("Lag (days)", expand = c(0,0)) + 
-  scale_x_continuous("Daily Maximum Temperature (ºC)", expand = c(0,0))
-hopper_max_temp_raster
-# ggsave(here("figs", "hopper_max_temp_raster.png"))
-```
-Not much of a pattern with max temp.
-
-## Precipitation cross-basis
-
-```{r}
-hopper_precip_raster <-
-  ggplot(filter(hp_pd, min_dist < 0.1),
-         aes(x = x, y = lag, z = exp(fitted), fill = exp(fitted))) +
-  geom_raster(interpolate = TRUE) +
-  geom_contour(color = "grey50", size = 0.4, binwidth = 0.001) +
-  scale_fill_viridis_c("Leafhoppers\nper leaf",
-                       option = "A",
-                       limits = hopper_lim) + 
-  scale_y_continuous("Lag (days)", expand = c(0,0)) + 
-  scale_x_continuous("Daily Precipitation (mm)", expand = c(0,0))
-hopper_precip_raster
-# ggsave(here("figs", "hopper_precip_raster.png"))
-```
-
-High precip 10-12 days ago has positive effect on leafhoppers
-
-
-## Combine raster plots
-
-```{r}
-hopper_cb <-
-  hopper_min_temp_raster +
-  hopper_temp_raster +
-  hopper_max_temp_raster +
-  hopper_precip_raster +
-  plot_layout(guides = "collect") +
-  plot_annotation(tag_levels = "A") &
-  theme_classic()
-hopper_cb
-ggsave(here("figs", "hopper_crossbasis.png"), hopper_cb, width = 165, units = "mm")
-ggsave(here("figs", "figure 2.eps"), hopper_cb, width = 165, units = "mm")
-```
-
-Try adding a rug for weather data
-
-```{r}
-weather <- read_rds(here("data", "cleaned", "weather_lags.rds"))
-weather <- weather %>% 
-  filter(date > min(hoppers$date) - lubridate::days(15),
-         date != max(hoppers$date)) #last day wouldn't show up in lags for any observations
-range(weather$date)
-range(hoppers$date)
-
-hopper_min_temp_raster +
-  geom_rug(data = weather, inherit.aes = FALSE, aes(x = temp_min), color = "grey50") +
-hopper_temp_raster +
-  geom_rug(data = weather, inherit.aes = FALSE, aes(x = temp_mean), color = "grey50") +
-hopper_max_temp_raster +
-  geom_rug(data = weather, inherit.aes = FALSE, aes(x = temp_max), color = "grey50") +
-hopper_precip_raster +
-  geom_rug(data = weather, inherit.aes = FALSE, aes(x = precip), color = "grey50") +
-  plot_layout(guides = "collect") +
-  plot_annotation(tag_levels = "A") &
-  theme_classic()
-ggsave(here("figs", "hopper_crossbasis_rug.png"), width = 165, units = "mm")
+m_hopper_temp_mean3$edf %>%
+  enframe() %>%
+  mutate(name = str_remove(name, ".\\d+")) %>%
+  group_by(name) %>%
+  summarize(edf = sum(value)) %T>%
+  print() %>% 
+  summarize(total = sum(edf))
 ```

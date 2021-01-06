@@ -11,6 +11,14 @@ output:
     number_sections: yes
 ---
 
+#TODO:
+
+- ~~Figure 1 should include entire time range used for data~~
+- ~~Add grey rectangle for missing values in weather?~~
+- ~~Calculate mean daily min, mean, max temperatures for entire range.~~
+- ~~Re-do precip calculations (mean, % of rainy days) for entire range.~~
+- Concurvity models broke.  Just need to update variable names, I think.
+
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
@@ -25,6 +33,7 @@ library(patchwork)
 library(scales)
 library(mgcv)
 library(conflicted)
+library(tsibble)
 conflict_prefer("filter", "dplyr")
 ```
 
@@ -38,8 +47,26 @@ Also a supplementary plot showing concurvity of temp and precip.
 
 ```{r data, echo=TRUE}
 df <- read_rds(here("data", "cleaned", "hopper-weather.rds"))
+weather_full <- read_rds(here("data", "cleaned", "weather_lags.rds"))
 ```
 
+# Filter to include only dates used
+Right now, I'm using weather up to 15 days prior to observations
+
+```{r}
+#first observsation:
+min(df$date)
+#first date for weather:
+min(df$date) - days(15)
+
+weather_full <-
+  weather_full %>% 
+  filter(date >= min(df$date) - days(15)) %>% 
+  #don't need matrix-colums
+  select(-starts_with("Q_"), -starts_with("L")) %>% 
+  as_tsibble(index = date) %>% 
+  fill_gaps()
+```
 
 # Summary tables
 
@@ -51,15 +78,16 @@ df %>%
             mean_precip = mean(precip, na.rm = TRUE),
             num_rainy = sum(precip > 0, na.rm = TRUE)/n(),
             median_precip = median(precip, na.rm = TRUE),
-            mean_density = mean(hoppers/n_leaves))
-
+            mean_density = mean(hoppers/n_leaves)) 
 df %>% 
-    summarize(length = last(date) - first(date),
-            mean_temp = mean(temp_mean),
-            mean_precip = mean(precip, na.rm = TRUE),
-            max_precip = max(precip, na.rm = TRUE),
-            mean_density = mean(hoppers/n_leaves))
-  
+  summarize(
+    length = last(date) - first(date),
+    across(c(temp_min, temp_mean, temp_max, precip),
+           c(mean = ~mean(.x, na.rm = TRUE), sd = ~sd(.x, na.rm = TRUE)),
+           .names = "{.col}_{.fn}"),
+    num_rainy = sum(precip > 0, na.rm = TRUE)/n(),
+    median_precip = median(precip, na.rm = TRUE)
+  )
 ```
 
 # Leafhopper Density Plot
@@ -87,8 +115,9 @@ densityplot <-
   geom_line(size = 1, lineend = "round") +
   theme_bw() +
   labs(x = "Date", y = "Leafhopper Density (insects/leaf)", color = "Harvest") +
-  scale_x_date(date_breaks = "3 days", labels = label_date(format = "%b %d")) +
+  scale_x_date(date_breaks = "3 days", labels = label_date(format = "%b %d"), limits = range(weather_full$date)) +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
+densityplot
 ```
 
 
@@ -105,24 +134,24 @@ ggplot(df, aes(x = date, y = hoppers/n_leaves, group = plant)) +
 # Figure 1
 
 ```{r}
-weatherdf <- 
-  df %>% group_by(date) %>% 
-  summarize(precip_mm = first(precip),
-            temp_mean = first(temp_mean),
-            temp_min = first(temp_min),
-            temp_max = first(temp_max))
-
-precip_plot <- 
-  ggplot(weatherdf, aes(x = date, y = precip_mm)) +
+max(weather_full$precip, na.rm = TRUE)
+precip_plot <-
+  ggplot(weather_full, aes(x = date, y = precip)) +
   geom_col(fill = "darkblue") +
   theme_bw() +
   scale_y_continuous("Precipitation (mm)") +
   scale_x_date(date_breaks = "3 days", labels = label_date(format = "%b %d")) +
   theme(axis.text.x.bottom = element_blank(),
         axis.title.x.bottom = element_blank())
+```
 
+
+```{r}
+which(is.na(weather_full$temp_mean))
+min(weather_full$temp_min, na.rm = TRUE)
+max(weather_full$temp_max, na.rm = TRUE)
 temp_plot <-
-  ggplot(weatherdf, aes(x = date)) +
+  ggplot(weather_full, aes(x = date)) +
   geom_line(aes(y = temp_mean), color = "red") +
   geom_line(aes(y = temp_min), color = "red", lty = "dashed") +
   geom_line(aes(y = temp_max), color = "red", lty = "dashed") +
@@ -134,65 +163,55 @@ temp_plot <-
 ```
 
 ```{r}
-plot1 <- precip_plot/temp_plot/densityplot + plot_layout(heights = c(2,2,3.5)) + plot_annotation(tag_levels = "A") &
+plot1 <- precip_plot/temp_plot/densityplot +
+  plot_layout(heights = c(2,2,3.5)) +
+  plot_annotation(tag_levels = "A") &
+  scale_x_date(date_breaks = "3 days",
+               labels = label_date(format = "%b %d"),
+               limits = range(weather_full$date),
+               expand = c(0,0)) &
   theme(text = element_text(size = 9))
-ggsave(here("figs", "exploratory.png"), plot1, width = 165, height = 150, units = "mm")
+plot1
+ggsave(here("figs", "figure 1.png"), plot1, width = 165, height = 150, units = "mm")
 ggsave(here("figs", "figure 1.eps"), plot1, width = 165, height = 150, units = "mm")
 ```
-
+Grey bars represent two days of missing weather data.
 
 # Correlation / concurvity supplementary plot
+
 ```{r}
 shootdf <- read_rds(here("data", "cleaned", "shoots.rds"))
 library(dlnm)
 ```
 
-
-```{r}
-Q_temp <-
-  shootdf %>% 
-  select(starts_with("temp_lag")) %>% 
-  as.matrix()
-
-# is.na(Q_temp) %>% colSums()
-
-Q_precip <-
-  shootdf %>%
-  select(starts_with("precip_lag")) %>% 
-  as.matrix()
-
-L <- 
-  shootdf %>% 
-  select(starts_with("L")) %>% 
-  as.matrix()
-# head(L)
-```
-
-
 ```{r}
 m_shoots <- 
   gam(growth ~ 
         #cross-basis function for temperature
-        s(Q_temp, L,
+        s(Q_temp_mean, L,
           bs = "cb",
-          k = c(5, 7),
+          k = c(10, 14),
           xt = list(bs = "cr")
           ) +
         #cross-basis function for precipitation
         s(Q_precip, L,
           bs = "cb",
-          k = c(5, 7),
+          k = c(10, 14),
           xt = list(bs = "cr")
           ) +
-        s(day_post, bs = "cs") + s(diameter, bs = "cs") + #co-variates
+        s(day_post, bs = "cr") + s(diameter, bs = "cr") + #co-variates
         s(interharvest_id, bs = "re") + s(plant, bs = "re"), #random effects
       data = shootdf,
+      gamma = 1.2,
       family = scat, #because residuals are very leptokurtic w/ gaussian
       method = "REML")
+
+summary(m_shoots)
 ```
 
 ```{r eval = FALSE}
-#is this because of the NAs?
+#concurvity() doesn't work with NAs in the data.
+#might also not work because a term has < 1 edf?
 concurvity(m_shoots, full = TRUE)
 concurvity(m_shoots, full = FALSE)
 ```
@@ -200,9 +219,8 @@ concurvity(m_shoots, full = FALSE)
 Precip and temp are concurve meaning they might be redundant in the model.  This makes sense as temperature and precip are generally correlated to some extent.
 
 ```{r}
-weatherdf
 concurvity_p <- 
-  ggplot(weatherdf, aes(y = temp_mean, x = precip_mm)) + 
+  ggplot(weather_full, aes(y = temp_mean, x = precip)) + 
   geom_point(alpha = 0.5) + 
   geom_smooth(method = "gam", level = 0.95) +
   labs(x = "Precipitation (mm)", y = "Mean Temperature (ºC)") +
@@ -213,21 +231,21 @@ ggsave(here("figs", "plotS1.tiff"), concurvity_p, width = 165, units = "mm")
 ```
 
 ```{r}
-test <-gam(temp_mean ~ s(precip_mm, bs = "cs"), data = weatherdf)
+test <-gam(temp_mean ~ s(precip, bs = "cs", k = 14), data = weather_full)
 gam.check(test)
 anova.gam(test)
+plot(test)
 ```
 
 
 # Descriptives
 
 ```{r}
-weatherdf %>% 
-  summarize(temp_grandmean = mean(temp_mean),
-            temp_sd = sd(temp_mean),
-            precip_mean = mean(precip_mm, na.rm = TRUE),
-            precip_sd = sd(precip_mm, na.rm = TRUE),
-            rainy_days_percent = sum(precip_mm >0, na.rm = TRUE)/n())
+weather_full %>% 
+  as_tibble() %>% 
+  summarize(across(-date, list(mean = ~mean(.x, na.rm = TRUE),
+                               sd = ~sd(.x, na.rm = TRUE))),
+            rainy_days_percent = sum(precip >0, na.rm = TRUE)/n())
 ```
 
 ```{r}

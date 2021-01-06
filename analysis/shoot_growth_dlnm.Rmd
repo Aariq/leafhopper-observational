@@ -1,9 +1,11 @@
 ---
 title: "Distributed Lag Model for Shoot Growth"
 author: "Eric R. Scott"
-date: "2020-01-15"
-output: 
-  html_notebook: 
+date: '2020-01-15'
+output:
+  word_document:
+    toc: yes
+  html_notebook:
     highlight: kate
     theme: yeti
     toc: yes
@@ -26,12 +28,7 @@ library(here)
 library(conflicted)
 library(mgcv)
 library(dlnm)
-library(glue)
-library(colorspace)
-library(patchwork)
 library(bbmle)
-library(visibly) #for ggplot figures from GAMs
-library(lubridate)
 
 conflict_prefer("filter", "dplyr")
 conflict_prefer("here", "here")
@@ -45,7 +42,7 @@ source(here("R", "crossbasis.r"))
 
 This analysis is based on Gasparrini A, Scheipl F, Armstrong B, Kenward MG (2017) A penalized framework for distributed lag non-linear models. Biometrics 73:938–948. doi: 10.1111/biom.12645.  Specifically, it is based on `ex1_01.int.R` provided in their code.  This "internal" method for distributed lag models takes full(?) advantage of built in features of `gam`s.
 
-The goal is to model the effects of temperature and precipitation on plant growth allowing for variable shape through time (lag) and across values of the predictor using a two-dimensional smoothing function called a cross-basis function. In an ideal world, the penalized spline would be the shrinkage version (bs = "cs"), but that isn't available in the crossbasis smooth constructor provided by `dlnm`, so this uses regular penalized cubic regression splines.
+The goal is to model the effects of temperature and precipitation on plant growth allowing for variable shape through time (lag) and across values of the predictor using a two-dimensional smoothing function called a cross-basis function.
 
 # Read in Data
 
@@ -63,16 +60,30 @@ Variables I'll be using:
 - `plant` (random effect): which plant was the shoot on
 - `interharvest_id` (random effect): combination of field ID and which interharvest period it was.  Each field x interharvest period experienced a unique climate history because harvests were not synchronized between the two fields.
 
-# Visual inspection
-
 ```{r}
-ggplot(shootdf, aes(x=growth)) + geom_histogram(bins = 30)
+#mean shoot growth
+mean(shootdf$growth)
+sd(shootdf$growth)
 ```
 
+```{r}
+#calculate mean of past 15 days
+shootdf <-
+  shootdf %>%
+  rowwise() %>% 
+  mutate(mean_temp_mean = mean(Q_temp_mean),
+         mean_temp_min = mean(Q_temp_min),
+         mean_temp_max = mean(Q_temp_max),
+         mean_precip = mean(Q_precip)) %>% 
+  #and the mean of days 1--4
+  mutate(pick_temp_mean = mean(Q_temp_mean[ , 1:4]),
+         pick_temp_min =   mean(Q_temp_min[ , 1:4]),
+         pick_temp_max =   mean(Q_temp_max[ , 1:4]),
+         pick_precip =     mean(Q_temp_max[ , 1:4])) %>% 
+  ungroup()
+```
 
-# Distributed Lag Model: "internal" method
-
-## Fit cross-basis GAMs
+# Build full models
 
 ```{r}
 m_shoot_temp_mean <- 
@@ -89,7 +100,6 @@ m_shoot_temp_mean <-
       family = scat, #because residuals are very leptokurtic w/ gaussian
       gamma = 1.2,
       method = "REML")
-gam.check(m_shoot_temp_mean)
 ```
 
 
@@ -108,7 +118,6 @@ m_shoot_temp_min <-
       family = scat, #because residuals are very leptokurtic w/ gaussian
       gamma = 1.2,
       method = "REML")
-gam.check(m_shoot_temp_min)
 ```
 
 
@@ -127,7 +136,6 @@ m_shoot_temp_max <-
       family = scat, #because residuals are very leptokurtic w/ gaussian
       gamma = 1.2,
       method = "REML")
-gam.check(m_shoot_temp_max)
 ```
 
 ```{r}
@@ -145,7 +153,6 @@ m_shoot_precip <-
       family = scat, #because residuals are very leptokurtic w/ gaussian
       gamma = 1.2,
       method = "REML")
-gam.check(m_shoot_precip)
 ```
 
 
@@ -155,230 +162,422 @@ ICtab(m_shoot_temp_mean, m_shoot_temp_min, m_shoot_temp_max, m_shoot_precip)
 
 temperature models have the lowest AIC.  Min, max, mean all essentially interchangable.
 
-# Mean Temperature model
+# Save Models
 
 ```{r}
-anova(m_shoot_temp_mean)
+write_rds(m_shoot_precip, here("analysis", "models",    "m_shoot_precip.rds"))
+write_rds(m_shoot_temp_max, here("analysis", "models",  "m_shoot_temp_max.rds"))
+write_rds(m_shoot_temp_mean, here("analysis", "models", "m_shoot_temp_mean.rds"))
+write_rds(m_shoot_temp_min, here("analysis", "models",  "m_shoot_temp_min.rds"))
+```
+
+
+
+# Mean Temperature
+
+## Inspect the GAM
+
+```{r}
+gam.check(m_shoot_temp_mean)
+```
+basis dimensions seem fine despite low p-value for k-index.
+
+## Model summary
+
+```{r}
+summary(m_shoot_temp_mean)
 ```
 
 Significant effects of lagged temperature, days post harvest, stem diameter, and plant ID.
 
-# Minimum Temperature model
-
-
-```{r}
-anova(m_shoot_temp_min)
-```
-
-still significant effect of minimum temperature
-
-
-# Maximum temperature model
-
+## H1: Is smooth necessary?
 
 ```{r}
-anova(m_shoot_temp_max)
+sp_shoot_temp_mean <- m_shoot_temp_mean$sp
+
+m_shoot_temp_mean1 <- 
+  gam(growth ~ 
+        mean_temp_mean +
+        s(day_post, bs = "cr", sp = sp_shoot_temp_mean["s(day_post)"]) + 
+        s(diameter, k = 15, bs = "cr", sp = sp_shoot_temp_mean["s(diameter)"]) + 
+        s(interharvest_id, bs = "re", sp = sp_shoot_temp_mean["s(interharvest_id)"]) + 
+        s(plant, bs = "re", sp = sp_shoot_temp_mean["s(plant)"]), 
+      data = shootdf,
+      family = scat, #because residuals are very leptokurtic w/ gaussian
+      gamma = 1.2,
+      method = "REML")
+h1_shoot_temp_mean <- anova.gam(m_shoot_temp_mean1, m_shoot_temp_mean,  test = "Chisq")
+h1_shoot_temp_mean
 ```
 
-Same, still significant.
+## H2: Is there an effect of crossbasis function?
 
+```{r}
+m_shoot_temp_mean_null <- 
+  gam(growth ~ 
+        s(day_post, bs = "cr", sp = sp_shoot_temp_mean["s(day_post)"]) + 
+        s(diameter, k = 15, bs = "cr", sp = sp_shoot_temp_mean["s(diameter)"]) + 
+        s(interharvest_id, bs = "re", sp = sp_shoot_temp_mean["s(interharvest_id)"]) + 
+        s(plant, bs = "re", sp = sp_shoot_temp_mean["s(plant)"]), 
+      data = shootdf,
+      family = scat, #because residuals are very leptokurtic w/ gaussian
+      gamma = 1.2,
+      method = "REML")
+
+h2_shoot_temp_mean <- anova.gam(m_shoot_temp_mean_null, m_shoot_temp_mean, test = "Chisq")
+h2_shoot_temp_mean
+#larger residual DF means smaller estimated degrees of freedom
+```
+
+## H3: Is there an effect of a specific lag time?
+
+```{r}
+m_shoot_temp_mean3 <- 
+  gam(growth ~ 
+        pick_temp_mean +
+        s(day_post, bs = "cr", sp = sp_shoot_temp_mean["s(day_post)"]) + 
+        s(diameter, k = 15, bs = "cr", sp = sp_shoot_temp_mean["s(diameter)"]) + 
+        s(interharvest_id, bs = "re", sp = sp_shoot_temp_mean["s(interharvest_id)"]) + 
+        s(plant, bs = "re", sp = sp_shoot_temp_mean["s(plant)"]), 
+      data = shootdf,
+      family = scat, #because residuals are very leptokurtic w/ gaussian
+      gamma = 1.2,
+      method = "REML")
+h3_shoot_temp_mean <- anova.gam(m_shoot_temp_mean_null, m_shoot_temp_mean3, test = "Chisq")
+h3_shoot_temp_mean
+```
+
+# Minimum Temperature
+
+## Inspect the GAM
+
+```{r}
+gam.check(m_shoot_temp_min)
+```
+
+## Model summary
+
+```{r}
+summary(m_shoot_temp_min)
+```
+
+## H1: Is smooth necessary?
+
+```{r}
+sp_shoot_temp_min <- m_shoot_temp_min$sp
+
+m_shoot_temp_min1 <- 
+  gam(growth ~ 
+        mean_temp_min +
+        s(day_post, bs = "cr", sp = sp_shoot_temp_min["s(day_post)"]) + 
+        s(diameter, k = 15, bs = "cr", sp = sp_shoot_temp_min["s(diameter)"]) + 
+        s(interharvest_id, bs = "re", sp = sp_shoot_temp_min["s(interharvest_id)"]) + 
+        s(plant, bs = "re", sp = sp_shoot_temp_min["s(plant)"]), 
+      data = shootdf,
+      family = scat, #because residuals are very leptokurtic w/ gaussian
+      gamma = 1.2,
+      method = "REML")
+h1_shoot_temp_min <- anova.gam(m_shoot_temp_min1, m_shoot_temp_min,  test = "Chisq")
+h1_shoot_temp_min
+```
+
+## H2: Is there an effect of crossbasis function?
+
+```{r}
+m_shoot_temp_min_null <- 
+  gam(growth ~ 
+        s(day_post, bs = "cr", sp = sp_shoot_temp_min["s(day_post)"]) + 
+        s(diameter, k = 15, bs = "cr", sp = sp_shoot_temp_min["s(diameter)"]) + 
+        s(interharvest_id, bs = "re", sp = sp_shoot_temp_min["s(interharvest_id)"]) + 
+        s(plant, bs = "re", sp = sp_shoot_temp_min["s(plant)"]), 
+      data = shootdf,
+      family = scat, #because residuals are very leptokurtic w/ gaussian
+      gamma = 1.2,
+      method = "REML")
+
+h2_shoot_temp_min <- anova.gam(m_shoot_temp_min_null, m_shoot_temp_min, test = "Chisq")
+h2_shoot_temp_min
+#larger residual DF means smaller estimated degrees of freedom
+```
+
+## H3: Is there an effect of a specific lag time?
+
+```{r}
+m_shoot_temp_min3 <- 
+  gam(growth ~ 
+        pick_temp_min +
+        s(day_post, bs = "cr", sp = sp_shoot_temp_min["s(day_post)"]) + 
+        s(diameter, k = 15, bs = "cr", sp = sp_shoot_temp_min["s(diameter)"]) + 
+        s(interharvest_id, bs = "re", sp = sp_shoot_temp_min["s(interharvest_id)"]) + 
+        s(plant, bs = "re", sp = sp_shoot_temp_min["s(plant)"]), 
+      data = shootdf,
+      family = scat, #because residuals are very leptokurtic w/ gaussian
+      gamma = 1.2,
+      method = "REML")
+h3_shoot_temp_min <- anova.gam(m_shoot_temp_min_null, m_shoot_temp_min3, test = "Chisq")
+h3_shoot_temp_min
+```
+# Maximum temperature
+
+## Inspect the GAM
+
+```{r}
+gam.check(m_shoot_temp_max)
+```
+basis dimensions seem fine despite low p-value for k-index.
+
+## Model summary
+
+```{r}
+summary(m_shoot_temp_max)
+```
+
+Significant effects of lagged temperature, days post harvest, stem diameter, and plant ID.
+
+## H1: Is smooth necessary?
+
+```{r}
+sp_shoot_temp_max <- m_shoot_temp_max$sp
+
+m_shoot_temp_max1 <- 
+  gam(growth ~ 
+        mean_temp_max +
+        s(day_post, bs = "cr", sp = sp_shoot_temp_max["s(day_post)"]) + 
+        s(diameter, k = 15, bs = "cr", sp = sp_shoot_temp_max["s(diameter)"]) + 
+        s(interharvest_id, bs = "re", sp = sp_shoot_temp_max["s(interharvest_id)"]) + 
+        s(plant, bs = "re", sp = sp_shoot_temp_max["s(plant)"]), 
+      data = shootdf,
+      family = scat, #because residuals are very leptokurtic w/ gaussian
+      gamma = 1.2,
+      method = "REML")
+h1_shoot_temp_max <- anova.gam(m_shoot_temp_max1, m_shoot_temp_max,  test = "Chisq")
+h1_shoot_temp_max
+```
+
+## H2: Is there an effect of crossbasis function?
+
+```{r}
+m_shoot_temp_max_null <- 
+  gam(growth ~ 
+        s(day_post, bs = "cr", sp = sp_shoot_temp_max["s(day_post)"]) + 
+        s(diameter, k = 15, bs = "cr", sp = sp_shoot_temp_max["s(diameter)"]) + 
+        s(interharvest_id, bs = "re", sp = sp_shoot_temp_max["s(interharvest_id)"]) + 
+        s(plant, bs = "re", sp = sp_shoot_temp_max["s(plant)"]), 
+      data = shootdf,
+      family = scat, #because residuals are very leptokurtic w/ gaussian
+      gamma = 1.2,
+      method = "REML")
+
+h2_shoot_temp_max <- anova.gam(m_shoot_temp_max_null, m_shoot_temp_max, test = "Chisq")
+h2_shoot_temp_max
+#larger residual DF means smaller estimated degrees of freedom
+```
+
+## H3: Is there an effect of a specific lag time?
+
+```{r}
+m_shoot_temp_max3 <- 
+  gam(growth ~ 
+        pick_temp_max +
+        s(day_post, bs = "cr", sp = sp_shoot_temp_max["s(day_post)"]) + 
+        s(diameter, k = 15, bs = "cr", sp = sp_shoot_temp_max["s(diameter)"]) + 
+        s(interharvest_id, bs = "re", sp = sp_shoot_temp_max["s(interharvest_id)"]) + 
+        s(plant, bs = "re", sp = sp_shoot_temp_max["s(plant)"]), 
+      data = shootdf,
+      family = scat, #because residuals are very leptokurtic w/ gaussian
+      gamma = 1.2,
+      method = "REML")
+h3_shoot_temp_max <- anova.gam(m_shoot_temp_max_null, m_shoot_temp_max3, test = "Chisq")
+h3_shoot_temp_max
+```
 # Precipitation model
 
+## Inspect the GAM
+
 ```{r}
-anova.gam(m_shoot_precip)
+gam.check(m_shoot_precip)
+```
+basis dimensions seem fine despite low p-value for k-index.
+
+## Model summary
+
+```{r}
+summary(m_shoot_precip)
 ```
 
-In this one, the co-variate `day_post` isn't significant. Odd...
+Interstingly, here the days post harvest term is not significant.
 
-# Plots
-
-## Covariates:
-
-Extract data from GAMs
+## H1: Is smooth necessary?
 
 ```{r}
-covar_plot_data <- list("Mean Temperature" = m_shoot_temp_mean,
-         "Minimum Temperature" = m_shoot_temp_min,
-         "Precipitation" = m_shoot_precip) %>%
-  map(~plot_gam(.x, main_var = vars(day_post, diameter))) %>% 
-  map_df(~pluck(.x,"data"), .id = "model")
+sp_shoot_precip <- m_shoot_precip$sp
+
+m_shoot_precip1 <- 
+  gam(growth ~ 
+        mean_precip +
+        s(day_post, bs = "cr", sp = sp_shoot_precip["s(day_post)"]) + 
+        s(diameter, k = 15, bs = "cr", sp = sp_shoot_precip["s(diameter)"]) + 
+        s(interharvest_id, bs = "re", sp = sp_shoot_precip["s(interharvest_id)"]) + 
+        s(plant, bs = "re", sp = sp_shoot_precip["s(plant)"]), 
+      data = shootdf,
+      family = scat, #because residuals are very leptokurtic w/ gaussian
+      gamma = 1.2,
+      method = "REML")
+h1_shoot_precip <- anova.gam(m_shoot_precip1, m_shoot_precip,  test = "Chisq")
+h1_shoot_precip
 ```
 
-Days post-harvest
+## H2: Is there an effect of crossbasis function?
 
 ```{r}
-dph_plot <-
-  covar_plot_data %>% 
-  filter(term == "day_post") %>% 
-  ggplot(aes(x = value, y = fit, color = model)) +
-  geom_ribbon(aes(ymin = ll, ymax = ul), 
-              fill = "grey", linetype = 0, alpha = 0.5) +
-  geom_line(size = 1) +
-  geom_rug(data = shootdf,
-           aes(day_post),
-           inherit.aes = FALSE,
-           alpha = 0.03) +
-  scale_y_continuous(limits = c(0, 0.6)) +
-  labs(x = "Days post harvest", y = "Shoot growth (cm/day)", color = "Model") +
-  theme_bw()
-dph_plot
+m_shoot_precip_null <- 
+  gam(growth ~ 
+        s(day_post, bs = "cr", sp = sp_shoot_precip["s(day_post)"]) + 
+        s(diameter, k = 15, bs = "cr", sp = sp_shoot_precip["s(diameter)"]) + 
+        s(interharvest_id, bs = "re", sp = sp_shoot_precip["s(interharvest_id)"]) + 
+        s(plant, bs = "re", sp = sp_shoot_precip["s(plant)"]), 
+      data = shootdf,
+      family = scat, #because residuals are very leptokurtic w/ gaussian
+      gamma = 1.2,
+      method = "REML")
+
+h2_shoot_precip <- anova.gam(m_shoot_precip_null, m_shoot_precip, test = "Chisq")
+h2_shoot_precip
+#larger residual DF means smaller estimated degrees of freedom
+```
+
+## H3: Is there an effect of a specific lag time?
+
+```{r}
+m_shoot_precip3 <- 
+  gam(growth ~ 
+        pick_precip +
+        s(day_post, bs = "cr", sp = sp_shoot_precip["s(day_post)"]) + 
+        s(diameter, k = 15, bs = "cr", sp = sp_shoot_precip["s(diameter)"]) + 
+        s(interharvest_id, bs = "re", sp = sp_shoot_precip["s(interharvest_id)"]) + 
+        s(plant, bs = "re", sp = sp_shoot_precip["s(plant)"]), 
+      data = shootdf,
+      family = scat, #because residuals are very leptokurtic w/ gaussian
+      gamma = 1.2,
+      method = "REML")
+h3_shoot_precip <- anova.gam(m_shoot_precip_null, m_shoot_precip3, test = "Chisq")
+h3_shoot_precip
+```
+
+# Table
+
+Collect model statistics:
+
+```{r}
+full_models <- list(m_shoot_temp_min,
+                    m_shoot_temp_mean,
+                    m_shoot_temp_max,
+                    m_shoot_precip)
+h1 <- list(h1_shoot_temp_min,
+           h1_shoot_temp_mean,
+           h1_shoot_temp_max,
+           h1_shoot_precip)
+
+h2 <- list(h2_shoot_temp_min,
+           h2_shoot_temp_mean,
+           h2_shoot_temp_max,
+           h2_shoot_precip)
+
+h3 <- list(h3_shoot_temp_min,
+           h3_shoot_temp_mean,
+           h3_shoot_temp_max,
+           h3_shoot_precip)
+
+df <- 
+  tibble(weather_var = c("Minimum daily temp.",
+                         "Mean daily temp.",
+                         "Maximum daily temp.",
+                         "Total daily precip."),
+         r2 = map_dbl(full_models, ~summary(.x)$r.sq),
+         aic = map_dbl(full_models, AIC),
+         h1_df = map_dbl(h1, ~pull(.x, "Df")[2]),
+         h1_x2 = map_dbl(h1, ~pull(.x, "Deviance")[2]),
+         h1_p = map_dbl(h1, ~pull(.x, "Pr(>Chi)")[2]),
+         h2_df = map_dbl(h2, ~pull(.x, "Df")[2]),
+         h2_x2 = map_dbl(h2, ~pull(.x, "Deviance")[2]),
+         h2_p = map_dbl(h2, ~pull(.x, "Pr(>Chi)")[2]),
+         h3_df = map_dbl(h3, ~pull(.x, "Df")[2]),
+         h3_x2 = map_dbl(h3, ~pull(.x, "Deviance")[2]),
+         h3_p = map_dbl(h3, ~pull(.x, "Pr(>Chi)")[2]),
+  ) 
+
+df <- 
+  df %>% 
+  mutate(daic = aic - min(aic), .after = aic)
+
 ```
 
 ```{r}
-dia_plot <- 
-  covar_plot_data %>% 
-  filter(term == "diameter") %>% 
-  ggplot(aes(x = value, y = fit, color = model)) +
-  geom_ribbon(aes(ymin = ll, ymax = ul), 
-              fill = "grey", linetype = 0, alpha = 0.5) +
-  geom_line(size = 1) +
-  geom_rug(data = shootdf,
-           aes(diameter),
-           inherit.aes = FALSE,
-           alpha = 0.03) +
-  scale_y_continuous(limits = c(0, 0.6)) +
-  labs(x = "Stem Diameter (mm)", y = "Shoot growth (cm/day)", color = "Model") +
-  theme_bw()
-dia_plot
+library(flextable)
+# get_flextable_defaults()
+set_flextable_defaults(font.family = "Times New Roman",
+                       font.size = 9)
 ```
 
 
-Shoots with larger diameters grow faster.  Shoot growth rates vary through time in a more complex manner with the fastest growth happening about 10 days post harvest and the slowest growth around 25 days post harvest.
-
-
-```{r}
-covars <-
-  dia_plot + 
-  (dph_plot +
-     theme(axis.title.y = element_blank(),
-           axis.text.y = element_blank(),
-           axis.ticks.y = element_blank())) + 
-  plot_layout(guides = "collect") + plot_annotation(tag_levels = "A")
-```
+With just two tests
 
 ```{r}
-ggsave(here("figs", "shoot_covariates.png"), covars, width = 165, height = 80, units = "mm")
-ggsave(here("figs", "figure 4.tiff"), covars, width = 165, height = 80, units = "mm")
-```
-
-## Cross-basis plots
-### Generate data
-
-```{r}
-st_pd <- cb_margeff(m_shoot_temp_mean, Q_temp_mean, L) 
-stmin_pd <- cb_margeff(m_shoot_temp_min, Q_temp_min, L)
-stmax_pd <- cb_margeff(m_shoot_temp_max, Q_temp_max, L)
-sp_pd <- cb_margeff(m_shoot_precip, Q_precip, L)
-```
-
-Uniform scale across plots:
-
-```{r}
-growth_lims <- c(min(st_pd$fitted, 
-                     sp_pd$fitted,
-                     stmin_pd$fitted, 
-                     stmax_pd$fitted),
-                 max(st_pd$fitted,
-                     sp_pd$fitted,
-                     stmin_pd$fitted,
-                     stmax_pd$fitted))
-```
-
-### Mean Temperature cross-basis
-
-Raster version:
-
-```{r}
-shoot_temp_raster <-
-  ggplot(filter(st_pd, min_dist < 0.1), aes(x = x, y = lag, z = fitted, fill = fitted)) +
-  geom_raster(interpolate = TRUE) +
-  geom_contour(color = "grey50", size = 0.4, binwidth = 0.01) +
-  scale_fill_viridis_c("Shoot growth\n(cm/day)", option = "A", limits = growth_lims) + 
-  scale_y_continuous("Lag (days)", expand = c(0,0)) + 
-  scale_x_continuous("Daily Mean Temperature (ºC)", expand = c(0,0)) 
-shoot_temp_raster
-# ggsave(here("figs", "shoot_temp_raster.png"), shoot_temp_raster)
+df %>% 
+  select(-starts_with("h3_"), -aic) %>% 
+  mutate(across(ends_with("_p"), ~gtsummary::style_pvalue(.x))) %>% 
+  flextable(col_keys = c("weather_var", "r2", "daic", "sep_1", "h1_df", "h1_x2", "h1_p", "sep_2", "h2_df", "h2_x2", "h2_p")) %>% 
+  colformat_num(j = 3, big.mark = "") %>% 
+ colformat_num(j = c(5, 6, 9, 10), digits = 3) %>% 
+  add_header_row(c("", "DLNM", "", "H1", "", "H2"), colwidths = c(1, 2, 1, 3, 1, 3), top = TRUE) %>% 
+  set_header_labels(
+    weather_var = "",
+    r2 = "R^2^",
+    daic = "∆AIC",
+    h1_df = "df",
+    h1_x2 = "X^2^",
+    h1_p = "P",
+    h2_df = "df",
+    h2_x2 = "X^2^",
+    h2_p = "P"
+  ) %>% 
+  merge_v(part = "header") %>% 
+  autofit() %>%
+  theme_booktabs() %>% 
+  align(align = "center", part =  "header") %>% 
+  align(i = 2, align = "right", part = "header") %>% 
+  align(align = "right", part = "body")
 ```
 
 
-### Min temperature cross-basis
+With all three tests
 
 ```{r}
-shoot_min_temp_raster <-
-  ggplot(filter(stmin_pd, min_dist < 0.1), 
-         aes(x = x, y = lag, z = fitted, fill = fitted)) +
-  geom_raster(interpolate = TRUE) +
-  geom_contour(color = "grey50", size = 0.4, binwidth = 0.01) +
-  scale_fill_viridis_c("Shoot growth\n(cm/day)", option = "A", limits = growth_lims) + 
-  scale_y_continuous("Lag (days)", expand = c(0,0)) + 
-  scale_x_continuous("Daily Minimum Temperature (ºC)", expand = c(0,0)) 
-shoot_min_temp_raster
-```
-
-### Max temperature cross-basis
-
-```{r}
-shoot_max_temp_raster <-
-  ggplot(filter(stmax_pd, min_dist < 0.1),
-         aes(x = x, y = lag, z = fitted, fill = fitted)) +
-  geom_raster(interpolate = TRUE) +
-  geom_contour(color = "grey50", size = 0.4, binwidth = 0.01) +
-  scale_fill_viridis_c("Shoot growth\n(cm/day)", option = "A", limits = growth_lims) + 
-  scale_y_continuous("Lag (days)", expand = c(0,0)) + 
-  scale_x_continuous("Daily Maximum Temperature (ºC)", expand = c(0,0))
-shoot_max_temp_raster
-# ggsave(here("figs", "shoot_max_temp_raster.png"), shoot_max_temp_raster)
-```
-
-### Precip cross-basis
-
-Raster version:
-
-```{r}
-shoot_precip_raster <-
-  ggplot(filter(sp_pd, min_dist < 0.1),
-         aes(x = x, y = lag, z = fitted, fill = fitted)) +
-  geom_raster(interpolate = TRUE) +
-  geom_contour(color = "grey50", size = 0.4, binwidth = 0.01) +
-  scale_fill_viridis_c("Shoot growth\n(cm/day)", option = "A", limits = growth_lims) + 
-  scale_y_continuous("Lag (days)", expand = c(0,0)) + 
-  scale_x_continuous("Daily Precipitation (mm)", expand = c(0,0))
-shoot_precip_raster
-# ggsave(here("figs", "shoot_precip_raster.png"), shoot_precip_raster)
-```
-
-Combine raster plots
-```{r}
-shoot_cb <-
-  shoot_min_temp_raster + shoot_temp_raster + shoot_max_temp_raster + shoot_precip_raster +
-  plot_layout(guides = "collect") + 
-  plot_annotation(tag_levels = "A") &
-  theme_classic()
-shoot_cb
-ggsave(here("figs", "shoot_crossbasis.png"), shoot_cb, width = 165, units = "mm")
-ggsave(here("figs", "figure 3.eps"), shoot_cb, width = 165, units = "mm")
-```
-
-Try adding a rug for weather data
-
-```{r}
-weather <- read_rds(here("data", "cleaned", "weather_lags.rds"))
-weather <- weather %>% 
-  filter(date > min(shootdf$date) - days(15),
-         date != max(shootdf$date)) #last day wouldn't show up in lags for any observations
-range(weather$date)
-range(shootdf$date)
-
-shoot_min_temp_raster +
-  geom_rug(data = weather, inherit.aes = FALSE, aes(x = temp_min), color = "grey50") +
-shoot_temp_raster +
-  geom_rug(data = weather, inherit.aes = FALSE, aes(x = temp_mean), color = "grey50") +
-shoot_max_temp_raster +
-  geom_rug(data = weather, inherit.aes = FALSE, aes(x = temp_max), color = "grey50") +
-shoot_precip_raster +
-  geom_rug(data = weather, inherit.aes = FALSE, aes(x = precip), color = "grey50") +
-  plot_layout(guides = "collect") +
-  plot_annotation(tag_levels = "A") &
-  theme_classic()
-ggsave(here("figs", "shoot_crossbasis_rug.png"), shoot_cb, width = 165, units = "mm")
+df %>% 
+  mutate(across(ends_with("_p"), ~gtsummary::style_pvalue(.x))) %>% 
+  flextable(col_keys = c("weather_var", "r2", "aic", "sep_1", "h1_df", "h1_x2", "h1_p", "sep_2", "h2_df", "h2_x2", "h2_p", "sep_3", "h3_df", "h3_x2", "h3_p")) %>% 
+  colformat_num(j = 3, big.mark = "") %>% 
+  colformat_num(j = c(4, 7, 10), digits = 3) %>% 
+  colformat_num(j = c(5, 8, 11), digits = 4) %>% 
+  add_header_row(c("", "DLNM", "", "H1", "", "H2", "", "H3"), colwidths = c(1, 2, 1, 3, 1, 3, 1, 3), top = TRUE) %>% 
+  set_header_labels(
+    weather_var = "",
+    r2 = "R^2^",
+    aic = "AIC",
+    h1_df = "df",
+    h1_x2 = "X^2^",
+    h1_p = "P",
+    h2_df = "df",
+    h2_x2 = "X^2^",
+    h2_p = "P",
+    h3_df = "df",
+    h3_x2 = "X^2^",
+    h3_p = "P"
+  ) %>% 
+  merge_v(part = "header") %>% 
+  autofit() %>%
+  theme_booktabs() %>% 
+  align(align = "center", part =  "header") %>% 
+  align(i = 2, align = "right", part = "header") %>% 
+  align(align = "right", part = "body")
 ```

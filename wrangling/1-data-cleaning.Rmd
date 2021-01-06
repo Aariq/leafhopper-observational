@@ -261,5 +261,5 @@ export
 
 ```{r}
 write_rds(caas_daily, here("data", "cleaned", "daily-weather-caas.rds"))
-# write_rds(caas_hourly, here("data", "cleaned", "hourly-weather-caas.rds")) #currently unused.
+write_rds(caas_hourly, here("data", "cleaned", "hourly-weather-caas.rds")) #currently unused.
 ```
