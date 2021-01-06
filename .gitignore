@@ -13,3 +13,4 @@ data/weather data original/
 *.eps
 *.tiff
 analysis/models/*.rds
+notes/
