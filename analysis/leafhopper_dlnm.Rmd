@@ -18,11 +18,6 @@ knitr::opts_chunk$set(echo = TRUE, paged.print = FALSE)
 options(scipen = 4)
 ```
 
-# TODO
-
--   for these new hypotheses tests to work, I need to fix the penalization for the covariates at whatever they are in the full model.
-
--   I might be able to do this with the `sp` parameter, or possibly by setting `k` and using `fx = TRUE`
 
 *Last compiled: `r Sys.Date()`*
 
@@ -72,6 +67,8 @@ hoppers <- read_rds(here("data", "cleaned", "hopper-weather.rds"))
 
 head(hoppers)
 # str(hoppers)
+hoppers %>% 
+  pull(temp_min) %>% hist()
 ```
 
 Remove any rows with missing values
